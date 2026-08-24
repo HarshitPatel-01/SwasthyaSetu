@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info: { title: Swasthya Setu API, version: 0.1.0 }
+paths:
+  /api/bootstrap:
+    get: { summary: Load demo patients, facilities, queues and dashboard state, responses: {'200': {description: OK}} }
+  /api/patients:
+    post: { summary: Register patient and consent, requestBody: {required: true}, responses: {'201': {description: Patient created}} }
+  /api/appointments:
+    post: { summary: Book facility/doctor-aware appointment, responses: {'201': {description: Appointment created}} }
+  /api/intakes:
+    post: { summary: Create AI-generated intake pending doctor review, responses: {'201': {description: Intake created}} }
+  /api/intakes/{id}/review:
+    patch: { summary: Doctor verifies or edits an intake, responses: {'200': {description: Intake reviewed}} }
+  /api/consultations:
+    post: { summary: Record consultation and optional prescription, responses: {'201': {description: Consultation created}} }
+  /api/referrals:
+    post: { summary: Create inter-facility referral, responses: {'201': {description: Referral created}} }
+  /api/dashboard:
+    get: { summary: Facility flow, workload, stock, KPI and high-risk view, responses: {'200': {description: OK}} }
