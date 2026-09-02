@@ -1,39 +1,458 @@
 import express from 'express';
 import cors from 'cors';
-import type { Appointment, Consultation, Consent, Facility, IntakeSummary, Patient, Prescription, Referral } from '@swasthya/shared';
+import type { 
+  Appointment, 
+  Consultation, 
+  Consent, 
+  Facility, 
+  IntakeSummary, 
+  Patient, 
+  Prescription, 
+  Referral 
+} from '@swasthya/shared';
 
-const app = express(); app.use(cors()); app.use(express.json());
-const uid = (prefix:string) => `${prefix}-${Math.random().toString(36).slice(2,9)}`;
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 const now = () => new Date().toISOString();
-const facility: Facility = { id:'fac-1', name:'Seva Rural Health Centre', type:'Primary Health Centre', distance:'2.4 km', services:['General medicine','Maternal care','Diagnostics','Teleconsult'], bedsAvailable:8 };
-const doctors = [{id:'doc-1', name:'Dr. Ananya Sharma', specialty:'General Medicine', availability:'Available now'}, {id:'doc-2', name:'Dr. R. Kumar', specialty:'Paediatrics', availability:'Available at 14:30'}];
-type DemoUser={id:string;name:string;email:string;password:string;role:'patient'|'health_worker'|'doctor'|'facility_admin'|'system_admin';facilityId?:string;patientId?:string};
-const users:DemoUser[]=[
- {id:'user-patient',name:'Meera Devi',email:'meera@example.com',password:'demo123',role:'patient',patientId:'pat-1'},
- {id:'user-worker',name:'Sita ASHA',email:'worker@example.com',password:'demo123',role:'health_worker',facilityId:'fac-1'},
- {id:'user-doctor',name:'Dr. Ananya Sharma',email:'doctor@example.com',password:'demo123',role:'doctor',facilityId:'fac-1'},
- {id:'user-admin',name:'Rahul Verma',email:'admin@example.com',password:'demo123',role:'facility_admin',facilityId:'fac-1'},
- {id:'user-system',name:'Platform Admin',email:'system@example.com',password:'demo123',role:'system_admin'}];
+
+const facility: Facility = { 
+  id: 'fac-1', 
+  name: 'Seva Rural Health Centre', 
+  type: 'Primary Health Centre', 
+  distance: '2.4 km', 
+  services: [
+    'General medicine',
+    'Maternal care',
+    'Diagnostics',
+    'Teleconsult'
+  ], 
+  bedsAvailable: 8 
+};
+
+const doctors = [
+  {
+    id: 'doc-1', 
+    name: 'Dr. Ananya Sharma', 
+    specialty: 'General Medicine', 
+    availability: 'Available now'
+  }, 
+  {
+    id: 'doc-2', 
+    name: 'Dr. R. Kumar', 
+    specialty: 'Paediatrics', 
+    availability: 'Available at 14:30'
+  }
+];
+
+type DemoUser = {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: 'patient' | 'health_worker' | 'doctor' | 'facility_admin' | 'system_admin';
+  facilityId?: string;
+  patientId?: string;
+};
+
+const users: DemoUser[] = [
+  {
+    id: 'user-patient',
+    name: 'Meera Devi',
+    email: 'meera@example.com',
+    password: 'demo123',
+    role: 'patient',
+    patientId: 'pat-1'
+  },
+  {
+    id: 'user-worker',
+    name: 'Sita ASHA',
+    email: 'worker@example.com',
+    password: 'demo123',
+    role: 'health_worker',
+    facilityId: 'fac-1'
+  },
+  {
+    id: 'user-doctor',
+    name: 'Dr. Ananya Sharma',
+    email: 'doctor@example.com',
+    password: 'demo123',
+    role: 'doctor',
+    facilityId: 'fac-1'
+  },
+  {
+    id: 'user-admin',
+    name: 'Rahul Verma',
+    email: 'admin@example.com',
+    password: 'demo123',
+    role: 'facility_admin',
+    facilityId: 'fac-1'
+  },
+  {
+    id: 'user-system',
+    name: 'Platform Admin',
+    email: 'system@example.com',
+    password: 'demo123',
+    role: 'system_admin'
+  }
+];
+
 const patients: Patient[] = [
- {id:'pat-1',name:'Meera Devi',abhaId:'91-2345-6789-0123',age:28,sex:'Female',phone:'•••• 4812',language:'Hindi',village:'Kheriya',risk:'high'},
- {id:'pat-2',name:'Ramesh Lal',abhaId:'91-8012-5501-4788',age:62,sex:'Male',phone:'•••• 7721',language:'English',village:'Bhanpur',risk:'high'},
- {id:'pat-3',name:'Asha Kumari',age:4,sex:'Female',phone:'•••• 1190',language:'Hindi',village:'Kheriya',risk:'normal'}];
-const consents: Consent[] = patients.map((p,i)=>({id:`con-${i+1}`,patientId:p.id,scopes:['care','referral','reminders'],status:'active',grantedAt:now()}));
-const appointments: Appointment[] = [{id:'apt-1',patientId:'pat-1',facilityId:'fac-1',doctorId:'doc-1',startsAt:'2026-08-24T10:30:00+05:30',token:12,status:'booked'}];
-const intakes: IntakeSummary[] = [{id:'int-1',patientId:'pat-1',appointmentId:'apt-1',symptoms:['Headache for 2 days','Blurred vision','Swelling in feet'],summary:'28-year-old, 7 months pregnant. Reports headache, blurred vision and pedal swelling for 2 days. Blood pressure assessment is recommended urgently.',redFlags:['Pregnancy with possible pre-eclampsia symptoms'],status:'pending_review',createdAt:now()}];
-const consultations: Consultation[] = []; const prescriptions: Prescription[] = [];
-const referrals: Referral[] = [{id:'ref-1',patientId:'pat-2',fromFacilityId:'fac-1',toFacilityId:'fac-2',reason:'Cardiology assessment for persistent hypertension',status:'accepted'}];
-const audit:{id:string;patientId?:string;action:string;createdAt:string}[]=[];
-function log(patientId:string|undefined,action:string){ audit.unshift({id:uid('audit'),patientId,action,createdAt:now()}); }
-function dashboard(){ return {kpis:{waiting:appointments.filter(a=>a.status==='booked').length,followUpRate:82,referralRate:76,teleconsults:14}, queue:appointments.filter(a=>a.status==='booked').map(a=>({...a,patient:patients.find(p=>p.id===a.patientId)?.name,doctor:doctors.find(d=>d.id===a.doctorId)?.name})), highRisk:patients.filter(p=>p.risk==='high'), medicines:[{name:'Paracetamol 500mg',quantity:144,status:'In stock'},{name:'Amlodipine 5mg',quantity:18,status:'Low stock'},{name:'ORS sachets',quantity:82,status:'In stock'}], referrals, workload:doctors.map(d=>({...d,patients:appointments.filter(a=>a.doctorId===d.id&&a.status==='booked').length+3}))}; }
-app.get('/api/bootstrap', (req,res)=>{const actor=users.find(u=>u.id===req.header('x-demo-user-id'));if(actor?.role==='patient'&&actor.patientId){const mine=<T extends {patientId:string}>(items:T[])=>items.filter(item=>item.patientId===actor.patientId);return res.json({facility,doctors,patients:patients.filter(p=>p.id===actor.patientId),consents:consents.filter(c=>c.patientId===actor.patientId),appointments:mine(appointments),intakes:mine(intakes),consultations:mine(consultations),prescriptions:mine(prescriptions),referrals:mine(referrals),dashboard:null,audit:audit.filter(a=>a.patientId===actor.patientId)})}res.json({facility,doctors,patients,consents,appointments,intakes,consultations,prescriptions,referrals,dashboard:dashboard(),audit})});
-app.get('/api/dashboard',(_req,res)=>res.json(dashboard()));
-app.post('/api/auth/login',(req,res)=>{const user=users.find(u=>u.email.toLowerCase()===String(req.body.email||'').toLowerCase()&&u.password===req.body.password&&u.role===req.body.role);if(!user)return res.status(401).json({message:'Email, password, or selected role is incorrect.'});const {password,...safeUser}=user;res.json({user:safeUser,token:`demo-token-${user.id}`})});
-app.post('/api/auth/register',(req,res)=>{const {name,email,password,role}=req.body;if(!name||!email||!password||!role)return res.status(400).json({message:'Name, email, password, and role are required.'});if(users.some(u=>u.email.toLowerCase()===String(email).toLowerCase()))return res.status(409).json({message:'An account already exists for this email.'});const user:DemoUser={id:uid('user'),name,email,password,role,facilityId:role==='patient'?undefined:'fac-1'};if(role==='patient'){const patient:Patient={id:uid('pat'),name,age:0,sex:'Unspecified',phone:req.body.phone||'',language:'English',village:req.body.village||'',risk:'normal'};patients.push(patient);user.patientId=patient.id;consents.push({id:uid('con'),patientId:patient.id,scopes:['care'],status:'active',grantedAt:now()})}users.push(user);const {password:_,...safeUser}=user;res.status(201).json({user:safeUser,token:`demo-token-${user.id}`})});
-app.post('/api/patients',(req,res)=>{ const p:Patient={id:uid('pat'),name:req.body.name,abhaId:req.body.abhaId,age:Number(req.body.age)||0,sex:req.body.sex||'Unspecified',phone:req.body.phone||'',language:req.body.language||'English',village:req.body.village||'',risk:'normal'}; patients.push(p); const c={id:uid('con'),patientId:p.id,scopes:req.body.scopes||['care'],status:'active' as const,grantedAt:now()}; consents.push(c); log(p.id,'Patient registered and consent captured'); res.status(201).json({patient:p,consent:c}); });
-app.post('/api/appointments',(req,res)=>{const a:Appointment={id:uid('apt'),patientId:req.body.patientId,facilityId:'fac-1',doctorId:req.body.doctorId||'doc-1',startsAt:req.body.startsAt||new Date(Date.now()+86400000).toISOString(),token:appointments.filter(x=>x.status==='booked').length+12,status:'booked'};appointments.push(a);log(a.patientId,'Appointment booked');res.status(201).json(a)});
-app.post('/api/intakes',(req,res)=>{const symptoms:string[]=req.body.symptoms||[];const redFlags=symptoms.filter((x:string)=>/chest|breath|bleed|pregnan|unconscious/i.test(x));const i: IntakeSummary={id:uid('int'),patientId:req.body.patientId,appointmentId:req.body.appointmentId,symptoms,summary:`AI-generated intake: ${symptoms.join('; ')||'No symptoms recorded'}. Requires clinician verification before entering the health record.`,redFlags,status:'pending_review',createdAt:now()};intakes.unshift(i);log(i.patientId,'AI intake submitted — pending clinical review');res.status(201).json(i)});
-app.patch('/api/intakes/:id/review',(req,res)=>{const i=intakes.find(x=>x.id===req.params.id);if(!i)return res.sendStatus(404);i.status=req.body.status==='rejected'?'rejected':'verified';if(req.body.summary)i.summary=req.body.summary;log(i.patientId,`Intake ${i.status} by clinician`);res.json(i)});
-app.post('/api/consultations',(req,res)=>{const c:Consultation={id:uid('con'),patientId:req.body.patientId,doctorId:req.body.doctorId||'doc-1',diagnosis:req.body.diagnosis||[],notes:req.body.notes||'',createdAt:now()};consultations.unshift(c);if(req.body.medicines?.length)prescriptions.unshift({id:uid('rx'),patientId:c.patientId,consultationId:c.id,medicines:req.body.medicines});const a=appointments.find(x=>x.id===req.body.appointmentId);if(a)a.status='completed';log(c.patientId,'Consultation completed and prescription issued');res.status(201).json({consultation:c,prescription:prescriptions[0]})});
-app.post('/api/referrals',(req,res)=>{const r:Referral={id:uid('ref'),patientId:req.body.patientId,fromFacilityId:'fac-1',toFacilityId:req.body.toFacilityId||'fac-2',reason:req.body.reason,status:'pending'};referrals.unshift(r);log(r.patientId,'Referral created');res.status(201).json(r)});
-app.listen(4000,()=>console.log('Swasthya Setu API: http://localhost:4000'));
+  {
+    id: 'pat-1',
+    name: 'Meera Devi',
+    abhaId: '91-2345-6789-0123',
+    age: 28,
+    sex: 'Female',
+    phone: '•••• 4812',
+    language: 'Hindi',
+    village: 'Kheriya',
+    risk: 'high'
+  },
+  {
+    id: 'pat-2',
+    name: 'Ramesh Lal',
+    abhaId: '91-8012-5501-4788',
+    age: 62,
+    sex: 'Male',
+    phone: '•••• 7721',
+    language: 'English',
+    village: 'Bhanpur',
+    risk: 'high'
+  },
+  {
+    id: 'pat-3',
+    name: 'Asha Kumari',
+    age: 4,
+    sex: 'Female',
+    phone: '•••• 1190',
+    language: 'Hindi',
+    village: 'Kheriya',
+    risk: 'normal'
+  }
+];
+
+const consents: Consent[] = patients.map((p, i) => ({
+  id: `con-${i + 1}`,
+  patientId: p.id,
+  scopes: ['care', 'referral', 'reminders'],
+  status: 'active',
+  grantedAt: now()
+}));
+
+const appointments: Appointment[] = [
+  {
+    id: 'apt-1',
+    patientId: 'pat-1',
+    facilityId: 'fac-1',
+    doctorId: 'doc-1',
+    startsAt: '2026-08-24T10:30:00+05:30',
+    token: 12,
+    status: 'booked'
+  }
+];
+
+const intakes: IntakeSummary[] = [
+  {
+    id: 'int-1',
+    patientId: 'pat-1',
+    appointmentId: 'apt-1',
+    symptoms: [
+      'Headache for 2 days',
+      'Blurred vision',
+      'Swelling in feet'
+    ],
+    summary: '28-year-old, 7 months pregnant. Reports headache, blurred vision and pedal swelling for 2 days. Blood pressure assessment is recommended urgently.',
+    redFlags: ['Pregnancy with possible pre-eclampsia symptoms'],
+    status: 'pending_review',
+    createdAt: now()
+  }
+];
+
+const consultations: Consultation[] = []; 
+const prescriptions: Prescription[] = [];
+
+const referrals: Referral[] = [
+  {
+    id: 'ref-1',
+    patientId: 'pat-2',
+    fromFacilityId: 'fac-1',
+    toFacilityId: 'fac-2',
+    reason: 'Cardiology assessment for persistent hypertension',
+    status: 'accepted'
+  }
+];
+
+const audit: {
+  id: string;
+  patientId?: string;
+  action: string;
+  createdAt: string
+}[] = [];
+
+function log(patientId: string | undefined, action: string) { 
+  audit.unshift({
+    id: uid('audit'),
+    patientId,
+    action,
+    createdAt: now()
+  }); 
+}
+
+function dashboard() { 
+  return {
+    kpis: {
+      waiting: appointments.filter(a => a.status === 'booked').length,
+      followUpRate: 82,
+      referralRate: 76,
+      teleconsults: 14
+    }, 
+    queue: appointments.filter(a => a.status === 'booked').map(a => ({
+      ...a,
+      patient: patients.find(p => p.id === a.patientId)?.name,
+      doctor: doctors.find(d => d.id === a.doctorId)?.name
+    })), 
+    highRisk: patients.filter(p => p.risk === 'high'), 
+    medicines: [
+      { name: 'Paracetamol 500mg', quantity: 144, status: 'In stock' },
+      { name: 'Amlodipine 5mg', quantity: 18, status: 'Low stock' },
+      { name: 'ORS sachets', quantity: 82, status: 'In stock' }
+    ], 
+    referrals, 
+    workload: doctors.map(d => ({
+      ...d,
+      patients: appointments.filter(a => a.doctorId === d.id && a.status === 'booked').length + 3
+    }))
+  }; 
+}
+
+app.get('/api/bootstrap', (req, res) => {
+  const actor = users.find(u => u.id === req.header('x-demo-user-id'));
+  
+  if (actor?.role === 'patient' && actor.patientId) {
+    const mine = <T extends { patientId: string }>(items: T[]) => 
+      items.filter(item => item.patientId === actor.patientId);
+      
+    return res.json({
+      facility,
+      doctors,
+      patients: patients.filter(p => p.id === actor.patientId),
+      consents: consents.filter(c => c.patientId === actor.patientId),
+      appointments: mine(appointments),
+      intakes: mine(intakes),
+      consultations: mine(consultations),
+      prescriptions: mine(prescriptions),
+      referrals: mine(referrals),
+      dashboard: null,
+      audit: audit.filter(a => a.patientId === actor.patientId)
+    });
+  }
+  
+  res.json({
+    facility,
+    doctors,
+    patients,
+    consents,
+    appointments,
+    intakes,
+    consultations,
+    prescriptions,
+    referrals,
+    dashboard: dashboard(),
+    audit
+  });
+});
+
+app.get('/api/dashboard', (_req, res) => {
+  res.json(dashboard());
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const user = users.find(u => 
+    u.email.toLowerCase() === String(req.body.email || '').toLowerCase() && 
+    u.password === req.body.password && 
+    u.role === req.body.role
+  );
+  
+  if (!user) {
+    return res.status(401).json({ message: 'Email, password, or selected role is incorrect.' });
+  }
+  
+  const { password, ...safeUser } = user;
+  res.json({ user: safeUser, token: `demo-token-${user.id}` });
+});
+
+app.post('/api/auth/register', (req, res) => {
+  const { name, email, password, role } = req.body;
+  
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ message: 'Name, email, password, and role are required.' });
+  }
+  
+  if (users.some(u => u.email.toLowerCase() === String(email).toLowerCase())) {
+    return res.status(409).json({ message: 'An account already exists for this email.' });
+  }
+  
+  const user: DemoUser = {
+    id: uid('user'),
+    name,
+    email,
+    password,
+    role,
+    facilityId: role === 'patient' ? undefined : 'fac-1'
+  };
+  
+  if (role === 'patient') {
+    const patient: Patient = {
+      id: uid('pat'),
+      name,
+      age: 0,
+      sex: 'Unspecified',
+      phone: req.body.phone || '',
+      language: 'English',
+      village: req.body.village || '',
+      risk: 'normal'
+    };
+    patients.push(patient);
+    user.patientId = patient.id;
+    consents.push({
+      id: uid('con'),
+      patientId: patient.id,
+      scopes: ['care'],
+      status: 'active',
+      grantedAt: now()
+    });
+  }
+  
+  users.push(user);
+  const { password: _, ...safeUser } = user;
+  res.status(201).json({ user: safeUser, token: `demo-token-${user.id}` });
+});
+
+app.post('/api/patients', (req, res) => { 
+  const p: Patient = {
+    id: uid('pat'),
+    name: req.body.name,
+    abhaId: req.body.abhaId,
+    age: Number(req.body.age) || 0,
+    sex: req.body.sex || 'Unspecified',
+    phone: req.body.phone || '',
+    language: req.body.language || 'English',
+    village: req.body.village || '',
+    risk: 'normal'
+  }; 
+  patients.push(p); 
+  
+  const c: Consent = {
+    id: uid('con'),
+    patientId: p.id,
+    scopes: req.body.scopes || ['care'],
+    status: 'active' as const,
+    grantedAt: now()
+  }; 
+  consents.push(c); 
+  
+  log(p.id, 'Patient registered and consent captured'); 
+  res.status(201).json({ patient: p, consent: c }); 
+});
+
+app.post('/api/appointments', (req, res) => {
+  const a: Appointment = {
+    id: uid('apt'),
+    patientId: req.body.patientId,
+    facilityId: 'fac-1',
+    doctorId: req.body.doctorId || 'doc-1',
+    startsAt: req.body.startsAt || new Date(Date.now() + 86400000).toISOString(),
+    token: appointments.filter(x => x.status === 'booked').length + 12,
+    status: 'booked'
+  };
+  appointments.push(a);
+  
+  log(a.patientId, 'Appointment booked');
+  res.status(201).json(a);
+});
+
+app.post('/api/intakes', (req, res) => {
+  const symptoms: string[] = req.body.symptoms || [];
+  const redFlags = symptoms.filter((x: string) => /chest|breath|bleed|pregnan|unconscious/i.test(x));
+  
+  const i: IntakeSummary = {
+    id: uid('int'),
+    patientId: req.body.patientId,
+    appointmentId: req.body.appointmentId,
+    symptoms,
+    summary: `AI-generated intake: ${symptoms.join('; ') || 'No symptoms recorded'}. Requires clinician verification before entering the health record.`,
+    redFlags,
+    status: 'pending_review',
+    createdAt: now()
+  };
+  intakes.unshift(i);
+  
+  log(i.patientId, 'AI intake submitted — pending clinical review');
+  res.status(201).json(i);
+});
+
+app.patch('/api/intakes/:id/review', (req, res) => {
+  const i = intakes.find(x => x.id === req.params.id);
+  if (!i) {
+    return res.sendStatus(404);
+  }
+  
+  i.status = req.body.status === 'rejected' ? 'rejected' : 'verified';
+  if (req.body.summary) {
+    i.summary = req.body.summary;
+  }
+  
+  log(i.patientId, `Intake ${i.status} by clinician`);
+  res.json(i);
+});
+
+app.post('/api/consultations', (req, res) => {
+  const c: Consultation = {
+    id: uid('con'),
+    patientId: req.body.patientId,
+    doctorId: req.body.doctorId || 'doc-1',
+    diagnosis: req.body.diagnosis || [],
+    notes: req.body.notes || '',
+    createdAt: now()
+  };
+  consultations.unshift(c);
+  
+  if (req.body.medicines?.length) {
+    prescriptions.unshift({
+      id: uid('rx'),
+      patientId: c.patientId,
+      consultationId: c.id,
+      medicines: req.body.medicines
+    });
+  }
+  
+  const a = appointments.find(x => x.id === req.body.appointmentId);
+  if (a) {
+    a.status = 'completed';
+  }
+  
+  log(c.patientId, 'Consultation completed and prescription issued');
+  res.status(201).json({ consultation: c, prescription: prescriptions[0] });
+});
+
+app.post('/api/referrals', (req, res) => {
+  const r: Referral = {
+    id: uid('ref'),
+    patientId: req.body.patientId,
+    fromFacilityId: 'fac-1',
+    toFacilityId: req.body.toFacilityId || 'fac-2',
+    reason: req.body.reason,
+    status: 'pending'
+  };
+  referrals.unshift(r);
+  
+  log(r.patientId, 'Referral created');
+  res.status(201).json(r);
+});
+
+app.listen(4000, () => {
+  console.log('Swasthya Setu API: http://localhost:4000');
+});
