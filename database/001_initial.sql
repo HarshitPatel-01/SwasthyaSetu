@@ -54,7 +54,10 @@ CREATE TABLE appointments (
     clinician_id UUID REFERENCES staff_users,
     starts_at TIMESTAMPTZ NOT NULL,
     token_number INT,
-    status TEXT NOT NULL DEFAULT 'booked'
+    status TEXT NOT NULL DEFAULT 'booked',
+    is_emergency BOOLEAN DEFAULT false,
+    medical_history TEXT,
+    attachments JSONB DEFAULT '[]'
 );
 
 CREATE TABLE intake_summaries (

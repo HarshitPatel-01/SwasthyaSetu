@@ -109,7 +109,11 @@ const patients: Patient[] = [
     phone: '•••• 4812',
     language: 'Hindi',
     village: 'Kheriya',
-    risk: 'high'
+    risk: 'high',
+    medicalCondition: '7 months pregnant with persistent headache and elevated BP',
+    medicalHistory: 'Mild gestational hypertension in 2024. Previous C-section surgery.',
+    allergies: 'Penicillin, Sulfa drugs',
+    medications: 'Iron sachets, Folic acid, Paracetamol 500mg'
   },
   {
     id: 'pat-2',
@@ -150,7 +154,25 @@ const appointments: Appointment[] = [
     doctorId: 'doc-1',
     startsAt: '2026-08-24T10:30:00+05:30',
     token: 12,
-    status: 'booked'
+    status: 'booked',
+    isEmergency: true,
+    medicalHistory: '7 months pregnant with severe headaches. Previous history of mild gestational hypertension in 2024.',
+    attachments: [
+      {
+        name: 'Blood_Report_Aug2026.pdf',
+        type: 'application/pdf',
+        size: 245000,
+        dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJ...'
+      },
+      {
+        name: 'Antenatal_Record.pdf',
+        type: 'application/pdf',
+        size: 512000,
+        dataUrl: 'data:application/pdf;base64,JVBERi0xLjQKJ...'
+      }
+    ],
+    verifiedByWorker: true,
+    precautions: 'Rest in a cool room, drink ORS fluids, monitor BP twice daily, and avoid high sodium foods.'
   }
 ];
 
@@ -341,7 +363,11 @@ app.post('/api/patients', (req, res) => {
     phone: req.body.phone || '',
     language: req.body.language || 'English',
     village: req.body.village || '',
-    risk: 'normal'
+    risk: 'normal',
+    medicalCondition: req.body.medicalCondition || '',
+    medicalHistory: req.body.medicalHistory || '',
+    allergies: req.body.allergies || '',
+    medications: req.body.medications || ''
   }; 
   patients.push(p); 
   
@@ -358,20 +384,85 @@ app.post('/api/patients', (req, res) => {
   res.status(201).json({ patient: p, consent: c }); 
 });
 
+app.patch('/api/patients/:id', (req, res) => {
+  const patient = patients.find(p => p.id === req.params.id);
+  if (!patient) {
+    return res.status(404).json({ message: 'Patient record not found' });
+  }
+
+  if (req.body.name !== undefined) patient.name = req.body.name;
+  if (req.body.age !== undefined) patient.age = Number(req.body.age) || patient.age;
+  if (req.body.sex !== undefined) patient.sex = req.body.sex;
+  if (req.body.phone !== undefined) patient.phone = req.body.phone;
+  if (req.body.village !== undefined) patient.village = req.body.village;
+  if (req.body.language !== undefined) patient.language = req.body.language;
+  if (req.body.medicalCondition !== undefined) patient.medicalCondition = req.body.medicalCondition;
+  if (req.body.medicalHistory !== undefined) patient.medicalHistory = req.body.medicalHistory;
+  if (req.body.allergies !== undefined) patient.allergies = req.body.allergies;
+  if (req.body.medications !== undefined) patient.medications = req.body.medications;
+  if (req.body.risk !== undefined) patient.risk = req.body.risk;
+
+  // Sync user record name
+  const user = users.find(u => u.patientId === patient.id);
+  if (user && req.body.name) {
+    user.name = req.body.name;
+  }
+
+  // Sync latest patient appointments medical history
+  appointments.filter(a => a.patientId === patient.id).forEach(a => {
+    if (patient.medicalHistory) a.medicalHistory = patient.medicalHistory;
+  });
+
+  log(patient.id, 'Patient profile and medical history updated');
+  res.json({ patient, user });
+});
+
 app.post('/api/appointments', (req, res) => {
+  const isEmergency = Boolean(req.body.isEmergency);
+  const medicalHistory = req.body.medicalHistory || undefined;
+  const attachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
+  
   const a: Appointment = {
     id: uid('apt'),
     patientId: req.body.patientId,
     facilityId: 'fac-1',
     doctorId: req.body.doctorId || 'doc-1',
-    startsAt: req.body.startsAt || new Date(Date.now() + 86400000).toISOString(),
-    token: appointments.filter(x => x.status === 'booked').length + 12,
-    status: 'booked'
+    startsAt: req.body.startsAt || new Date().toISOString(),
+    token: isEmergency ? 1 : appointments.filter(x => x.status === 'booked').length + 12,
+    status: 'booked',
+    medicalHistory,
+    attachments,
+    isEmergency,
+    emergencyReason: req.body.emergencyReason || undefined
   };
-  appointments.push(a);
+
+  if (isEmergency) {
+    appointments.unshift(a);
+  } else {
+    appointments.push(a);
+  }
+
+  // Update patient's primary record if medical history is provided
+  const patient = patients.find(p => p.id === a.patientId);
+  if (patient && medicalHistory) {
+    patient.risk = isEmergency ? 'high' : patient.risk;
+  }
   
-  log(a.patientId, 'Appointment booked');
+  log(a.patientId, isEmergency ? 'EMERGENCY appointment booked with doctor' : 'Appointment booked');
   res.status(201).json(a);
+});
+
+app.patch('/api/appointments/:id/precaution', (req, res) => {
+  const appointment = appointments.find(a => a.id === req.params.id);
+  if (!appointment) {
+    return res.status(404).json({ message: 'Appointment not found' });
+  }
+
+  appointment.precautions = req.body.precautions || '';
+  appointment.verifiedByWorker = true;
+
+  log(appointment.patientId, 'Health worker verified patient condition and issued precautions');
+  res.json(appointment);
 });
 
 app.post('/api/intakes', (req, res) => {

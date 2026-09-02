@@ -12,6 +12,10 @@ export interface Patient {
   language: string;
   village: string;
   risk?: 'high' | 'normal';
+  medicalCondition?: string;
+  medicalHistory?: string;
+  allergies?: string;
+  medications?: string;
 }
 
 export interface Consent {
@@ -22,6 +26,13 @@ export interface Consent {
   grantedAt: string;
 }
 
+export interface Attachment {
+  name: string;
+  type: string;
+  size: number;
+  dataUrl?: string;
+}
+
 export interface Appointment {
   id: string;
   patientId: string;
@@ -30,6 +41,12 @@ export interface Appointment {
   startsAt: string;
   token: number;
   status: 'booked' | 'completed';
+  medicalHistory?: string;
+  attachments?: Attachment[];
+  isEmergency?: boolean;
+  emergencyReason?: string;
+  precautions?: string;
+  verifiedByWorker?: boolean;
 }
 
 export interface IntakeSummary {
