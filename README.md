@@ -1,158 +1,195 @@
-# Swasthya Setu
+# SwasthyaSetu
 
-Swasthya Setu is a demonstration platform for connected rural healthcare. It gives patients, frontline health workers, clinicians, facilities, and system administrators a shared continuity-of-care workflow—from appointment booking and guided intake through clinical review, referrals, prescriptions, and follow-up.
+SwasthyaSetu is a connected healthcare platform designed to simplify patient care by bringing appointments, medical records, healthcare facilities, doctors, emergency support, and care-team information into one system.
 
 > This is a demonstration application. It is not approved for clinical use and must not be used to make, delay, or replace medical decisions.
 
 ## Highlights
 
-- Role-based portals for Patient, Health Worker, Doctor/Specialist, System Admin, and System Admin
-- Patient-only access scope: patient sessions are restricted to their own record and cannot open staff portals
-- Appointment booking with doctor-aware digital tokens
-- Guided multilingual-ready AI intake, always marked **pending clinical review**
-- Doctor verification, consultation notes, and prescription issuance
-- Referral, medicine availability, high-risk patient, and live queue views
-- Shared TypeScript domain contracts and PostgreSQL-ready relational schema
-- Low-bandwidth-friendly responsive UI and provider-neutral AI/OCR/speech boundaries
+### Patient Portal
+
+The Patient Portal provides a centralized healthcare dashboard with:
+
+- Patient profile and personal healthcare information
+- Appointment booking with nearby healthcare facilities
+- Hospital and doctor selection
+- Doctor-specific appointment slots
+- Digital appointment tokens
+- Appointment cancellation and slot release
+- Upcoming visit and appointment details
+- Medical history and health information
+- Medical conditions, allergies, and current medications
+- Medical reports and document uploads
+- Prescriptions, consultations, and referrals
+- AI Assistant / Health Check for health-related guidance and understanding medical information
+- Emergency SOS assistance
+- Nearby hospitals based on the patient's live location
+- Hospital directions and contact information
+- Appointment and system notifications
+- Multilingual interface support
+
+### Doctor Portal
+
+The Doctor Portal provides access to patient information required for continuity of care, including:
+
+- Patient medical history
+- Medical conditions
+- Allergies and medications
+- Shared medical reports
+- Patient intake information
+- Consultation information
+- Prescriptions
+- Referrals
+- Patient care information
+
+### Health Worker Portal
+
+The Health Worker Portal supports frontline healthcare operations by providing access to relevant patient information shared through the care network.
+
+### System Admin Portal
+
+SwasthyaSetu uses a **single administration entry point: System Admin**.
+
+The System Admin portal provides centralized administration for:
+
+- Patients
+- Doctors
+- Health workers
+- Healthcare facilities
+- System-level operations
+- Care-network administration
+
+There is **no separate Facility Admin login or registration role**. Facility-management capabilities are handled through the System Admin portal.
+
+---
+
+## Patient Healthcare Features
+
+### Appointment Booking
+
+Patients can:
+
+1. Select a nearby healthcare facility.
+2. View available doctors.
+3. Select a doctor using the available options.
+4. Select an available date and time slot.
+5. Book an appointment.
+6. Receive a digital queue token.
+
+Each doctor follows a defined working schedule, with a maximum of 8 working hours per day in the demo system.
+
+Appointment capacity is maintained through the database, and a full slot is automatically removed from the available options.
+
+### Appointment Cancellation
+
+Patients can cancel an existing appointment after confirmation.
+
+When an appointment is cancelled:
+
+- The appointment is marked as cancelled.
+- The active token is released.
+- The appointment slot becomes available again.
+- The cancellation is recorded in the system.
+- A notification can be sent through configured notification providers.
+
+### Health Records
+
+The Patient Health Records section provides a longitudinal view of the patient's healthcare information.
+
+It includes:
+
+- Medical condition
+- Medical history
+- Allergies
+- Medications
+- Blood reports
+- Laboratory reports
+- Prescriptions
+- Scans
+- Discharge summaries
+- Other medical documents
+- Consultations
+- Referrals
+- Previous appointments
+
+Patients can upload supported medical documents and remove documents when required.
+
+### AI Assistant / Health Check
+
+The Patient Portal includes an AI Assistant designed to help patients understand their healthcare information and prepare for medical consultations.
+
+It can provide assistance related to:
+
+- Understanding health records
+- Understanding healthcare terminology
+- Reviewing available report information
+- Preparing questions for a doctor
+- Upcoming visits
+- General health-related guidance
+
+AI assistance is presented as supportive information and does not replace professional medical evaluation.
+
+### Nearby Hospitals
+
+The application can use the patient's browser location to find nearby healthcare facilities.
+
+The nearby hospital feature provides information such as:
+
+- Hospital/facility name
+- Distance from the patient
+- Emergency availability when available
+- Contact information
+- Directions
+
+The application uses live location and map data to identify nearby facilities.
+
+### Emergency SOS
+
+The Patient Portal provides an Emergency SOS option for quickly accessing emergency assistance and nearby healthcare facilities.
+
+The feature is intended to reduce the time required to find appropriate emergency care.
+
+### Notifications
+
+The system maintains appointment-related notifications.
+
+When configured, patients can receive:
+
+- Appointment confirmation
+- Appointment cancellation notification
+
+Notifications can be delivered through:
+
+- Gmail/email
+- SMS using Twilio
+
+Notification delivery status is also stored by the system.
+
+---
 
 ## Technology
 
-| Area | Choice |
+| Area | Technology |
 | --- | --- |
-| Web client | React, TypeScript, Vite |
+| Web Client | React, TypeScript, Vite |
 | API | Node.js, Express, TypeScript |
-| UI | Custom responsive CSS, Lucide icons |
-| Domain contracts | Shared TypeScript package |
-| Production schema | PostgreSQL SQL migration |
-| Demo persistence | In-memory seeded data |
+| UI | Custom responsive CSS, Lucide Icons |
+| Database | SQLite |
+| Shared Contracts | TypeScript |
+| Maps / Nearby Facilities | OpenStreetMap / Overpass API |
+| Email Notifications | Gmail SMTP / Nodemailer |
+| SMS Notifications | Twilio |
+| AI Boundary | Provider-neutral architecture |
 
 ## Prerequisites
 
-- Node.js 20 or newer (Node 22+ recommended)
+- Node.js 22.5+ recommended
 - npm 10 or newer
 
-## Quick start
+## Quick Start
+
+Clone the repository:
 
 ```bash
 git clone https://github.com/HarshitPatel-01/SwasthyaSetu.git
 cd SwasthyaSetu
-npm install
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173). The API starts at [http://localhost:4000](http://localhost:4000).
-
-To create an optimized production build:
-
-```bash
-npm run build
-```
-
-## Demo accounts
-
-All seeded accounts use the password `demo123`.
-
-| Stakeholder | Email | Portal |
-| --- | --- | --- |
-| Patient | `meera@example.com` | Personal care record and appointments |
-| Health worker | `worker@example.com` | Community care operations |
-| Doctor | `doctor@example.com` | Intake review and clinical care |
-| System administrator | `admin@example.com` | Queue, stock, referral, and risk monitoring |
-| System administrator | `system@example.com` | Network-wide operations |
-
-You may also create a new account from the registration page. A newly registered patient automatically receives an individual patient record and active care consent in the demo data store.
-
-## Application routes
-
-The app uses hash routes so it can run from a static host without server rewrites.
-
-| Route | Access |
-| --- | --- |
-| `#/login` | Sign in |
-| `#/register` | Create a stakeholder account |
-| `#/patient/home` | Patient portal |
-| `#/doctor/home` | Doctor portal |
-| `#/health_worker/home` | Health worker portal |
-| `#/system_admin/home` | System administration portal |
-| `#/system_admin/home` | System administration portal |
-
-The client routes unauthorized users back to their permitted workspace. The bootstrap API also scopes patient data to the signed-in patient identity used by the demo.
-
-## Project structure
-
-```text
-apps/
-  api/                 Express API and demo seed data
-  web/                 React application
-database/
-  001_initial.sql      PostgreSQL-ready clinical data schema
-packages/
-  shared/              Shared domain models and role types
-openapi.yaml           REST API contract
-```
-
-## Key workflows
-
-1. A patient signs in, books a doctor-aware appointment, and receives a queue token.
-2. The patient submits guided symptoms through the intake screen.
-3. The intake is explicitly labelled AI-generated and remains pending until a clinician reviews it.
-4. A doctor verifies or returns the intake, records consultation notes, and issues a prescription.
-5. Facility staff monitor queues, referrals, medicine stock, and high-risk outreach needs using the same shared data.
-
-## Data and safety notes
-
-- `database/001_initial.sql` defines entities for patients, consents, appointments, intake summaries, consultations, prescriptions, referrals, diagnostic results, medicine availability, reminders, facilities, staff, and audit logs.
-- The running demo keeps data in memory. Restarting the API restores the seeded data.
-- AI is intentionally presented as assistance only. No AI output is auto-finalized into the clinical record.
-- The demo login is for local development only. A production system must use HTTPS, password hashing, OAuth2/OIDC or signed JWTs, server-side authorization, durable PostgreSQL storage, encryption, formal consent policies, audit retention, and applicable healthcare compliance review.
-
-## Available commands
-
-```bash
-npm run dev      # Starts the web app and API together
-npm run build    # Type-checks and builds both applications
-npm run seed     # Starts the API with the included seed data
-```
-
-## API contract
-
-The REST API is documented in [openapi.yaml](./openapi.yaml). AI, OCR, and speech capabilities are designed to be implemented through swappable provider adapters rather than hard-coded vendors.
-
-
-## Database-backed appointment slots
-Appointments and availability are persisted in a local SQLite database at `data/swasthya.sqlite`. The API creates appointment slots from each doctor's schedule for the next 90 days. Availability is read from the database and booking atomically changes the selected slot from `available` to `booked`; cancellation returns it to `available`.
-
-The selected live nearby hospital is included in the slot key, so the same doctor/date/time can be offered independently for the selected facility. The frontend requests `/api/availability?doctorId=...&facilityId=...&date=...`.
-
-SQLite is provided by Node.js `node:sqlite`, so use Node 22.5+ (Node 22 LTS recommended).
-
-
-## Patient SMS + Gmail notifications
-
-Appointment confirmation and cancellation notifications are sent by the API when providers are configured. Booking/cancellation still succeeds if a provider is not configured or temporarily fails.
-
-### Gmail
-Set:
-- `GMAIL_USER` — the Gmail/Google Workspace sender account
-- `GMAIL_APP_PASSWORD` — a Google App Password (recommended; do not use the normal Gmail password)
-- `GMAIL_FROM` — optional display/sender address
-
-### SMS (Twilio)
-Set:
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_FROM_NUMBER`
-
-For the demo patient, set `SWASTHYA_PATIENT_PHONE_PAT_1=+91XXXXXXXXXX` to a real verified/test number. Do not put a masked UI value such as `•••• 4812` into the SMS provider.
-
-After booking: the patient receives an appointment confirmation by SMS and email. After cancellation: the patient receives a cancellation message stating that the token was deleted and the slot was released.
-
-### Notification persistence
-
-Appointment booking and cancellation notifications are persisted in the SQLite `notifications` table before/while delivery is attempted. Each record stores the patient, appointment, channel (`gmail` or `sms`), recipient, message, delivery status, provider message ID, error (if any), creation time, and sent time. Configure `GMAIL_*` and `TWILIO_*` environment variables to enable live delivery; notification history is still retained when a provider is not configured.
-
-
-## Administration roles
-
-SwasthyaSetu uses a single administration entry point: **System Admin**.
-Facility-management capabilities remain part of the care network, but there is no separate Facility Admin login or registration role.
