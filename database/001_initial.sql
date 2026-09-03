@@ -1,5 +1,5 @@
 -- PostgreSQL schema; JSONB fields retain FHIR-compatible extensibility.
-CREATE TYPE user_role AS ENUM ('patient','health_worker','doctor','facility_admin','system_admin');
+CREATE TYPE user_role AS ENUM ('patient','health_worker','doctor','system_admin');
 
 CREATE TYPE consent_status AS ENUM ('active','revoked','expired');
 

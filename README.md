@@ -6,7 +6,7 @@ Swasthya Setu is a demonstration platform for connected rural healthcare. It giv
 
 ## Highlights
 
-- Role-based portals for Patient, Health Worker, Doctor/Specialist, Facility Admin, and System Admin
+- Role-based portals for Patient, Health Worker, Doctor/Specialist, System Admin, and System Admin
 - Patient-only access scope: patient sessions are restricted to their own record and cannot open staff portals
 - Appointment booking with doctor-aware digital tokens
 - Guided multilingual-ready AI intake, always marked **pending clinical review**
@@ -57,7 +57,7 @@ All seeded accounts use the password `demo123`.
 | Patient | `meera@example.com` | Personal care record and appointments |
 | Health worker | `worker@example.com` | Community care operations |
 | Doctor | `doctor@example.com` | Intake review and clinical care |
-| Facility administrator | `admin@example.com` | Queue, stock, referral, and risk monitoring |
+| System administrator | `admin@example.com` | Queue, stock, referral, and risk monitoring |
 | System administrator | `system@example.com` | Network-wide operations |
 
 You may also create a new account from the registration page. A newly registered patient automatically receives an individual patient record and active care consent in the demo data store.
@@ -73,7 +73,7 @@ The app uses hash routes so it can run from a static host without server rewrite
 | `#/patient/home` | Patient portal |
 | `#/doctor/home` | Doctor portal |
 | `#/health_worker/home` | Health worker portal |
-| `#/facility_admin/home` | Facility administration portal |
+| `#/system_admin/home` | System administration portal |
 | `#/system_admin/home` | System administration portal |
 
 The client routes unauthorized users back to their permitted workspace. The bootstrap API also scopes patient data to the signed-in patient identity used by the demo.
@@ -150,3 +150,9 @@ After booking: the patient receives an appointment confirmation by SMS and email
 ### Notification persistence
 
 Appointment booking and cancellation notifications are persisted in the SQLite `notifications` table before/while delivery is attempted. Each record stores the patient, appointment, channel (`gmail` or `sms`), recipient, message, delivery status, provider message ID, error (if any), creation time, and sent time. Configure `GMAIL_*` and `TWILIO_*` environment variables to enable live delivery; notification history is still retained when a provider is not configured.
+
+
+## Administration roles
+
+SwasthyaSetu uses a single administration entry point: **System Admin**.
+Facility-management capabilities remain part of the care network, but there is no separate Facility Admin login or registration role.

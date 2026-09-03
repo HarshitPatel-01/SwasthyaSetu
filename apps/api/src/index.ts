@@ -352,7 +352,7 @@ type DemoUser = {
   name: string;
   email: string;
   password: string;
-  role: 'patient' | 'health_worker' | 'doctor' | 'facility_admin' | 'system_admin';
+  role: 'patient' | 'health_worker' | 'doctor' | 'system_admin';
   facilityId?: string;
   patientId?: string;
 };
@@ -380,14 +380,6 @@ const users: DemoUser[] = [
     email: 'doctor@example.com',
     password: 'demo123',
     role: 'doctor',
-    facilityId: 'fac-1'
-  },
-  {
-    id: 'user-admin',
-    name: 'Rahul Verma',
-    email: 'admin@example.com',
-    password: 'demo123',
-    role: 'facility_admin',
     facilityId: 'fac-1'
   },
   {
@@ -736,6 +728,10 @@ app.post('/api/auth/register', (req, res) => {
   
   if (!name || !email || !password || !role) {
     return res.status(400).json({ message: 'Name, email, password, and role are required.' });
+  }
+  const allowedRoles: DemoUser['role'][] = ['patient', 'health_worker', 'doctor', 'system_admin'];
+  if (!allowedRoles.includes(role as DemoUser['role'])) {
+    return res.status(400).json({ message: 'This administration role is not available. Use System Admin for facility administration.' });
   }
   
   if (users.some(u => u.email.toLowerCase() === String(email).toLowerCase())) {
