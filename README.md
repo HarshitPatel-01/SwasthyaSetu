@@ -197,3 +197,11 @@ Notification delivery status is also stored by the system.
 ```bash
 git clone https://github.com/HarshitPatel-01/SwasthyaSetu.git
 cd SwasthyaSetu
+
+
+| Role          | Email                | Password  |
+| ------------- | -------------------- | --------- |
+| Patient       | `meera@example.com`  | `demo123` |
+| Health Worker | `worker@example.com` | `demo123` |
+| Doctor        | `doctor@example.com` | `demo123` |
+| System Admin  | `system@example.com` | `demo123` |
