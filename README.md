@@ -169,7 +169,7 @@ Notification delivery status is also stored by the system.
 
 ## Technology
 
-| Area | Technology |
+| Area | Choice |
 | --- | --- |
 | Web Client | React, TypeScript, Vite |
 | API | Node.js, Express, TypeScript |
@@ -181,14 +181,18 @@ Notification delivery status is also stored by the system.
 | SMS Notifications | Twilio |
 | AI Boundary | Provider-neutral architecture |
 
+---
+
 ## Prerequisites
 
 - Node.js 22.5+ recommended
 - npm 10 or newer
 
+---
+
 ## Quick Start
 
-Clone the repository:
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/HarshitPatel-01/SwasthyaSetu.git
