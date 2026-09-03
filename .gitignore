@@ -3,3 +3,8 @@ dist
 .env
 dev-server.log
 dev-server.err
+apps/api/.env
+# Local SQLite database
+apps/api/data/*.sqlite
+apps/api/data/*.sqlite-shm
+apps/api/data/*.sqlite-wal

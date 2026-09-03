@@ -117,3 +117,36 @@ npm run seed     # Starts the API with the included seed data
 ## API contract
 
 The REST API is documented in [openapi.yaml](./openapi.yaml). AI, OCR, and speech capabilities are designed to be implemented through swappable provider adapters rather than hard-coded vendors.
+
+
+## Database-backed appointment slots
+Appointments and availability are persisted in a local SQLite database at `data/swasthya.sqlite`. The API creates appointment slots from each doctor's schedule for the next 90 days. Availability is read from the database and booking atomically changes the selected slot from `available` to `booked`; cancellation returns it to `available`.
+
+The selected live nearby hospital is included in the slot key, so the same doctor/date/time can be offered independently for the selected facility. The frontend requests `/api/availability?doctorId=...&facilityId=...&date=...`.
+
+SQLite is provided by Node.js `node:sqlite`, so use Node 22.5+ (Node 22 LTS recommended).
+
+
+## Patient SMS + Gmail notifications
+
+Appointment confirmation and cancellation notifications are sent by the API when providers are configured. Booking/cancellation still succeeds if a provider is not configured or temporarily fails.
+
+### Gmail
+Set:
+- `GMAIL_USER` — the Gmail/Google Workspace sender account
+- `GMAIL_APP_PASSWORD` — a Google App Password (recommended; do not use the normal Gmail password)
+- `GMAIL_FROM` — optional display/sender address
+
+### SMS (Twilio)
+Set:
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_FROM_NUMBER`
+
+For the demo patient, set `SWASTHYA_PATIENT_PHONE_PAT_1=+91XXXXXXXXXX` to a real verified/test number. Do not put a masked UI value such as `•••• 4812` into the SMS provider.
+
+After booking: the patient receives an appointment confirmation by SMS and email. After cancellation: the patient receives a cancellation message stating that the token was deleted and the slot was released.
+
+### Notification persistence
+
+Appointment booking and cancellation notifications are persisted in the SQLite `notifications` table before/while delivery is attempted. Each record stores the patient, appointment, channel (`gmail` or `sms`), recipient, message, delivery status, provider message ID, error (if any), creation time, and sent time. Configure `GMAIL_*` and `TWILIO_*` environment variables to enable live delivery; notification history is still retained when a provider is not configured.

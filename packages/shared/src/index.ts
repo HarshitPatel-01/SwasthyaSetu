@@ -1,5 +1,6 @@
 export type Role = 'patient' | 'health_worker' | 'doctor' | 'facility_admin' | 'system_admin';
 export type ReviewStatus = 'pending_review' | 'verified' | 'rejected';
+export type MedicalDocumentType = 'blood_report' | 'lab_report' | 'prescription' | 'scan' | 'discharge_summary' | 'other';
 export type ReferralStatus = 'pending' | 'accepted' | 'completed';
 
 export interface Patient {
@@ -22,15 +23,21 @@ export interface Consent {
   id: string;
   patientId: string;
   scopes: string[];
-  status: 'active' | 'revoked';
+  status: 'active' | 'paused' | 'revoked';
   grantedAt: string;
 }
 
-export interface Attachment {
+export interface MedicalDocument {
+  id: string;
+  patientId: string;
   name: string;
-  type: string;
+  type: MedicalDocumentType;
+  mimeType: string;
   size: number;
-  dataUrl?: string;
+  dataUrl: string;
+  notes?: string;
+  uploadedAt: string;
+  sharedWithCareTeam: boolean;
 }
 
 export interface Appointment {
@@ -40,13 +47,11 @@ export interface Appointment {
   doctorId: string;
   startsAt: string;
   token: number;
-  status: 'booked' | 'completed';
-  medicalHistory?: string;
-  attachments?: Attachment[];
-  isEmergency?: boolean;
-  emergencyReason?: string;
-  precautions?: string;
-  verifiedByWorker?: boolean;
+  status: 'booked' | 'completed' | 'cancelled';
+  facilityName?: string;
+  facilityLatitude?: number;
+  facilityLongitude?: number;
+  sharedDocumentIds?: string[];
 }
 
 export interface IntakeSummary {
