@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: Swasthya Setu Unified Healthcare API
+  description: >
+    Unified API for Swasthya Setu connecting Patient, Health Worker, and Doctor experiences
+    over a single SQLite runtime persistence layer. Preserved Admin foundations are documented
+    and architecturally intact but unexposed in the active three-role UI.
+  version: 1.0.0
+servers:
+  - url: http://localhost:4000/api
+    description: Local unified API server
+
+tags:
+  - name: Core & Bootstrap
+    description: Core initialization, shared data synchronization, and health checks
+  - name: Authentication
+    description: Unified role-based authentication for Patient, Health Worker, and Doctor
+  - name: Patient Care Journey
+    description: Patient intake, appointment booking, medical document vault, and emergency SOS
+  - name: Health Worker Fieldwork
+    description: Frontline community care, triage escalation, precautions, and teleconsult support
+  - name: Doctor Clinical Triage
+    description: Doctor clinical triage queue, e-prescriptions, diagnostics, dispatch, and specialist referrals
+  - name: Preserved Admin Foundations
+    description: Preserved backend operational infrastructure (unexposed in active user interface)
+
+paths:
+  /bootstrap:
+    get:
+      tags: [Core & Bootstrap]
+      summary: Load unified bootstrap data for the active user role
+      parameters:
+        - in: header
+          name: x-demo-user-id
+          schema:
+            type: string
+          description: Optional active user ID to scope patient-private records
+      responses:
+        '200':
+          description: Unified care network state including facilities, roster, appointments, intakes, cases, referrals, prescriptions, diagnostics, and alerts.
+
+  /health:
+    get:
+      tags: [Core & Bootstrap]
+      summary: System health check
+      responses:
+        '200':
+          description: Service is healthy.
+
+  /dashboard:
+    get:
+      tags: [Core & Bootstrap]
+      summary: Unified facility flow, patient queue, pharmacy stock, and frontline worker overview
+      responses:
+        '200':
+          description: Aggregated operational dashboard state.
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in as Patient, Health Worker, or Doctor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, email, password]
+              properties:
+                role:
+                  type: string
+                  enum: [patient, health_worker, doctor]
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Authentication successful.
+
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new patient account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                role:
+                  type: string
+                  enum: [patient]
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+                phone:
+                  type: string
+                village:
+                  type: string
+      responses:
+        '201':
+          description: Patient account and consent record created.
+
+  /patients:
+    post:
+      tags: [Patient Care Journey]
+      summary: Register a patient record directly with consent
+      responses:
+        '201':
+          description: Patient created.
+
+  /appointments:
+    post:
+      tags: [Patient Care Journey]
+      summary: Book facility and doctor-aware appointment with capacity checks
+      responses:
+        '201':
+          description: Appointment booked and token generated.
+
+  /intakes:
+    post:
+      tags: [Patient Care Journey]
+      summary: Create clinical intake with automated red-flag detection and auto-triage case creation
+      responses:
+        '201':
+          description: Intake recorded and synced to Doctor triage queue.
+
+  /medical-documents:
+    post:
+      tags: [Patient Care Journey]
+      summary: Upload medical report or diagnostic image to secure vault
+      responses:
+        '201':
+          description: Medical document encrypted and persisted.
+
+  /emergency/alerts:
+    post:
+      tags: [Patient Care Journey]
+      summary: Trigger emergency SOS routing to nearest available frontline health worker (or 112 fallback)
+      responses:
+        '201':
+          description: Emergency alert created and responder dispatched.
+
+  /emergency/alerts/{id}/resolve:
+    patch:
+      tags: [Health Worker Fieldwork]
+      summary: Resolve an active emergency alert
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alert marked as handled.
+
+  /care-review-requests:
+    post:
+      tags: [Health Worker Fieldwork]
+      summary: Health worker requests doctor clinical review for a patient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [patientId, reason]
+              properties:
+                patientId:
+                  type: string
+                workerId:
+                  type: string
+                reason:
+                  type: string
+                facilityId:
+                  type: string
+      responses:
+        '201':
+          description: Clinical review request submitted and auto-triage case created.
+
+  /care-review-requests/{id}:
+    patch:
+      tags: [Health Worker Fieldwork]
+      summary: Update review request status (pending, reviewed, cancelled)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Review request status updated.
+
+  /precautions:
+    post:
+      tags: [Health Worker Fieldwork]
+      summary: Issue clinical precaution or home-care instructions to a patient
+      responses:
+        '201':
+          description: Precaution issued.
+
+  /cases:
+    get:
+      tags: [Doctor Clinical Triage]
+      summary: List all doctor triage cases with dynamic severity scoring, patient joins, and longitudinal care history
+      responses:
+        '200':
+          description: Array of triage cases with live clinical summaries.
+
+  /cases/{id}:
+    get:
+      tags: [Doctor Clinical Triage]
+      summary: Retrieve full clinical details, intake transcript, and longitudinal timeline for a triage case
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Case details retrieved.
+
+  /cases/{id}/status:
+    patch:
+      tags: [Doctor Clinical Triage]
+      summary: Update triage case workflow status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [new, in_review, action_taken, resolved]
+      responses:
+        '200':
+          description: Status updated.
+
+  /cases/{id}/prescription:
+    post:
+      tags: [Doctor Clinical Triage]
+      summary: Doctor issues e-prescription for triage case (persisted in SQLite prescriptions_db)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prescription created and linked to patient longitudinal record.
+
+  /cases/{id}/diagnostics:
+    post:
+      tags: [Doctor Clinical Triage]
+      summary: Doctor orders lab or imaging diagnostic tests (persisted in SQLite diagnostic_orders)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Diagnostic order registered.
+
+  /cases/{id}/referral:
+    post:
+      tags: [Doctor Clinical Triage]
+      summary: Doctor creates inter-facility or specialist referral (persisted in SQLite referrals)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Referral created with verifiable token.
+
+  /cases/{id}/consultation:
+    post:
+      tags: [Doctor Clinical Triage]
+      summary: Doctor logs clinical examination notes and patient vitals
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Consultation notes persisted.
+
+  /cases/{id}/dispatch-worker:
+    post:
+      tags: [Doctor Clinical Triage]
+      summary: Doctor dispatches an active frontline health worker (ASHA) for patient home monitoring
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Health worker assigned and status updated to dispatched.
+
+  /cases/{id}/resolve:
+    post:
+      tags: [Doctor Clinical Triage]
+      summary: Doctor verifies care plan, schedules follow-up, and resolves triage case
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Case resolved and care review request synchronized.
+
+  /cases/simulate:
+    post:
+      tags: [Doctor Clinical Triage]
+      summary: Simulate incoming clinical triage scenario (critical or urgent) with real patient linkage
+      responses:
+        '200':
+          description: Simulated case created in SQLite.
+
+  # --------------------------------------------------------------------------------
+  # PRESERVED ADMIN FOUNDATIONS (Preserved in database & API, unexposed in 3-role UI)
+  # --------------------------------------------------------------------------------
+  /admin/facilities:
+    get:
+      tags: [Preserved Admin Foundations]
+      summary: "[Preserved Admin Foundation - Unexposed in active UI] List facilities across regional care network"
+      responses:
+        '200':
+          description: Operational facility roster.
+
+  /admin/workers:
+    get:
+      tags: [Preserved Admin Foundations]
+      summary: "[Preserved Admin Foundation - Unexposed in active UI] Healthcare worker capacity and staffing roster"
+      responses:
+        '200':
+          description: Frontline worker staffing records.

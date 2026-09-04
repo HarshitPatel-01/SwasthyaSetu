@@ -1,0 +1,17 @@
+{
+  "name": "swasthya-setu",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @swasthya/api\" \"npm run dev -w @swasthya/web\"",
+    "build": "npm run build -w @swasthya/api && npm run build -w @swasthya/web",
+    "seed": "npm run seed -w @swasthya/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
