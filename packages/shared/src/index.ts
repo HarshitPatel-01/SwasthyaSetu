@@ -1,4 +1,4 @@
-export type Role = 'patient' | 'health_worker' | 'doctor' | 'system_admin';
+export type Role = 'patient' | 'health_worker' | 'doctor' | 'facility_admin' | 'system_admin';
 export type ReviewStatus = 'pending_review' | 'verified' | 'rejected';
 export type MedicalDocumentType = 'blood_report' | 'lab_report' | 'prescription' | 'scan' | 'discharge_summary' | 'other';
 export type ReferralStatus = 'pending' | 'accepted' | 'completed';
@@ -92,6 +92,10 @@ export interface Referral {
   toFacilityId: string;
   reason: string;
   status: ReferralStatus;
+  referralToken?: string;
+  patientName?: string;
+  toFacilityName?: string;
+  fromFacilityName?: string;
 }
 
 export interface Facility {

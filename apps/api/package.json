@@ -7,16 +7,17 @@
     "seed": "tsx src/index.ts --seed"
   },
   "dependencies": {
+    "@swasthya/shared": "*",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "@swasthya/shared": "*",
     "nodemailer": "^7.0.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
+    "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.1",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "@types/node": "^22.10.2"
+    "typescript": "^5.7.2"
   }
 }
