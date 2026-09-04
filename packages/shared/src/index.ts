@@ -113,3 +113,100 @@ export interface AuditLog {
   action: string;
   createdAt: string;
 }
+
+// ── Doctor Triage Workspace Types (merged from doc-side) ──────────────────────
+// These types power the CareLine Doctor triage queue, case detail,
+// longitudinal history, and clinical action modals.
+
+export type SeverityLevel = 'critical' | 'urgent' | 'concerning' | 'routine';
+export type CaseStatus = 'new' | 'in_review' | 'action_taken' | 'resolved';
+
+/** Deterministic governance rule that overrode the AI-assigned severity level. */
+export interface RedFlagOverride {
+  overridden: boolean;
+  ruleName?: string;
+  originalLevel?: SeverityLevel;
+  reason: string;
+}
+
+/** One turn of the patient intake conversation transcript. */
+export interface TranscriptEntry {
+  question: string;
+  answer: string;
+  timestamp?: string;
+}
+
+/** Frontline health worker assigned or available for dispatch to a case. */
+export interface FrontlineWorkerInfo {
+  name: string;
+  role: string;
+  phone: string;
+  status: 'dispatched' | 'on_site' | 'available' | 'busy';
+  distance: string;
+}
+
+/** One entry in a patient's longitudinal health record timeline. */
+export interface PastVisit {
+  id: string;
+  date: string;
+  facility: string;
+  type: 'visit' | 'prescription' | 'diagnostic' | 'referral' | 'followup';
+  title: string;
+  detail: string;
+  doctorName?: string;
+  status?: string;
+}
+
+/** Structured clinical intake summary produced by the AI triage assistant. */
+export interface StructuredIntakeSummary {
+  chiefComplaint: string;
+  duration: string;
+  symptoms: string[];
+  history: {
+    conditions?: string[];
+    medications?: string[];
+    allergies?: string[];
+  };
+  redFlags: string[];
+}
+
+/** A diagnostic test order placed by the doctor for a triage case. */
+export interface DiagnosticOrder {
+  id: string;
+  patientId: string;
+  caseId: string;
+  testName: string;
+  facilityName: string;
+  status: 'ordered' | 'completed';
+  orderedAt: string;
+}
+
+/**
+ * A full triage case as seen in the CareLine Doctor workspace.
+ * Created from a patient intake and enriched with severity assessment,
+ * longitudinal history (computed from DB joins), and frontline worker context.
+ */
+export interface TriageCase {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientAge: number;
+  patientGender: string;
+  patientLanguage: string;
+  patientAbha?: string;
+  patientVillage: string;
+  submittedAt: string;
+  timeAgo: string;
+  status: CaseStatus;
+  severity: {
+    level: SeverityLevel;
+    reasoning: string;
+    override?: RedFlagOverride;
+  };
+  summary: StructuredIntakeSummary;
+  transcript: TranscriptEntry[];
+  longitudinalHistory: PastVisit[];
+  frontlineWorker: FrontlineWorkerInfo | null;
+  followUpDate?: string;
+  notes?: string;
+}
