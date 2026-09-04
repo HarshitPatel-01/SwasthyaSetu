@@ -9,6 +9,7 @@ import type {
   Appointment, 
   Consultation, 
   Consent, 
+  DiagnosticOrder,
   Facility, 
   IntakeSummary,
   MedicalDocument, 
@@ -145,6 +146,30 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY, patient_id TEXT, action TEXT NOT NULL, created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS triage_cases (
+    id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, intake_id TEXT,
+    appointment_id TEXT, doctor_id TEXT, care_review_request_id TEXT, referral_id TEXT, assigned_worker_id TEXT,
+    severity_level TEXT NOT NULL DEFAULT 'concerning',
+    severity_reasoning TEXT NOT NULL DEFAULT '',
+    override_json TEXT DEFAULT '{}',
+    case_status TEXT NOT NULL DEFAULT 'new',
+    summary_json TEXT NOT NULL DEFAULT '{}',
+    transcript_json TEXT NOT NULL DEFAULT '[]',
+    frontline_worker_json TEXT,
+    follow_up_date TEXT, notes TEXT,
+    submitted_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS diagnostic_orders (
+    id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, case_id TEXT,
+    test_name TEXT NOT NULL, facility_name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'ordered', ordered_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS care_team_messages (
+    id TEXT PRIMARY KEY, patient_id TEXT NOT NULL,
+    sender_role TEXT NOT NULL, sender_id TEXT, sender_name TEXT NOT NULL,
+    recipient_role TEXT NOT NULL, recipient_id TEXT, recipient_name TEXT NOT NULL,
+    message TEXT NOT NULL, created_at TEXT NOT NULL, read_at TEXT
+  );
 `);
 
 function ensureColumn(table: string, column: string, definition: string) {
@@ -185,7 +210,9 @@ const migrations: Array<[string,string,string]> = [
   ['prescriptions_db','consultation_id',"TEXT NOT NULL DEFAULT ''"], ['prescriptions_db','medicines',"TEXT NOT NULL DEFAULT '[]'"], ['prescriptions_db','created_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'],
   ['emergency_alerts','patient_phone','TEXT'], ['emergency_alerts','latitude','REAL'], ['emergency_alerts','longitude','REAL'], ['emergency_alerts','location_accuracy','REAL'], ['emergency_alerts','assigned_worker_id','TEXT'], ['emergency_alerts','assigned_worker_name','TEXT'], ['emergency_alerts','assigned_worker_phone','TEXT'], ['emergency_alerts','status',"TEXT NOT NULL DEFAULT 'active'"], ['emergency_alerts','fallback_used','INTEGER NOT NULL DEFAULT 0'], ['emergency_alerts','created_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'], ['emergency_alerts','resolved_at','TEXT'],
   ['care_consents_db','scopes',"TEXT NOT NULL DEFAULT '[]'"], ['care_consents_db','status',"TEXT NOT NULL DEFAULT 'paused'"], ['care_consents_db','granted_at','TEXT'], ['care_consents_db','updated_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'],
-  ['audit_logs','patient_id','TEXT'], ['audit_logs','action',"TEXT NOT NULL DEFAULT ''"], ['audit_logs','created_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP']
+  ['audit_logs','patient_id','TEXT'], ['audit_logs','action',"TEXT NOT NULL DEFAULT ''"], ['audit_logs','created_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+  ['triage_cases','intake_id','TEXT'], ['triage_cases','appointment_id','TEXT'], ['triage_cases','doctor_id','TEXT'], ['triage_cases','care_review_request_id','TEXT'], ['triage_cases','referral_id','TEXT'], ['triage_cases','assigned_worker_id','TEXT'], ['triage_cases','severity_level',"TEXT NOT NULL DEFAULT 'concerning'"], ['triage_cases','severity_reasoning',"TEXT NOT NULL DEFAULT ''"], ['triage_cases','override_json',"TEXT DEFAULT '{}'"], ['triage_cases','case_status',"TEXT NOT NULL DEFAULT 'new'"], ['triage_cases','summary_json',"TEXT NOT NULL DEFAULT '{}'"], ['triage_cases','transcript_json',"TEXT NOT NULL DEFAULT '[]'"], ['triage_cases','frontline_worker_json','TEXT'], ['triage_cases','follow_up_date','TEXT'], ['triage_cases','notes','TEXT'], ['triage_cases','submitted_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'], ['triage_cases','updated_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+  ['diagnostic_orders','case_id','TEXT'], ['diagnostic_orders','test_name',"TEXT NOT NULL DEFAULT ''"], ['diagnostic_orders','facility_name',"TEXT NOT NULL DEFAULT ''"], ['diagnostic_orders','status',"TEXT NOT NULL DEFAULT 'ordered'"], ['diagnostic_orders','ordered_at','TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP']
 ];
 for (const [table,column,definition] of migrations) ensureColumn(table,column,definition);
 
@@ -215,7 +242,13 @@ const mailTransport = smtpUser && smtpPass
 
 console.log(`Email notifications: ${mailTransport ? `configured (${smtpUser})` : 'not configured'}`);
 
-async function sendPatientNotification(patientId: string, appointmentId: string | null, type: 'appointment_booked' | 'appointment_cancelled', subject: string, message: string) {
+async function sendPatientNotification(
+  patientId: string, 
+  appointmentId: string | null, 
+  type: 'appointment_booked' | 'appointment_cancelled' | 'intake_verified' | 'prescription_issued' | 'diagnostic_ordered' | 'referral_created' | 'teleconsult_notes' | 'worker_dispatched' | 'case_resolved' | 'care_reviewed' | string, 
+  subject: string, 
+  message: string
+) {
   const patient = patients.find(p => p.id === patientId) as any;
   const user = users.find(u => u.patientId === patientId);
   const email = patient?.email || user?.email || process.env.DEMO_PATIENT_EMAIL;
@@ -223,7 +256,7 @@ async function sendPatientNotification(patientId: string, appointmentId: string 
   const phone = patient?.notificationPhone || process.env[envKey];
   const results: Record<string, string> = {};
 
-  const createNotification = (channel: 'gmail' | 'sms', recipient: string | undefined) => {
+  const createNotification = (channel: string, recipient: string | undefined) => {
     const id = uid('notification');
     db.prepare(`INSERT INTO notifications (id,patient_id,appointment_id,type,channel,recipient,message,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
       .run(id, patientId, appointmentId, type, channel, recipient || null, message, 'pending', now());
@@ -233,6 +266,11 @@ async function sendPatientNotification(patientId: string, appointmentId: string 
     db.prepare(`UPDATE notifications SET status=?, provider_message_id=?, error=?, sent_at=? WHERE id=?`)
       .run(status, providerMessageId || null, error || null, status === 'sent' ? now() : null, id);
   };
+
+  // Always register an in-app notification so patient immediately sees it in portal
+  const inAppId = createNotification('in_app', email || phone || 'in_app');
+  updateNotification(inAppId, 'sent', 'in_app_msg');
+  results.inApp = 'sent';
 
   const emailId = createNotification('gmail', email);
   if (mailTransport && email) {
@@ -575,6 +613,67 @@ const patients: Patient[] = [
     language: 'Hindi',
     village: 'Kheriya',
     risk: 'normal'
+  },
+  {
+    id: 'pat-4',
+    name: 'Lakshmi Bai',
+    abhaId: '91-4455-6677-8899',
+    age: 34,
+    sex: 'Female',
+    phone: '+91 90000 00004',
+    language: 'Hindi',
+    village: 'Govindpura',
+    risk: 'high'
+  },
+  {
+    id: 'pat-5',
+    name: 'Suresh Yadav',
+    age: 55,
+    sex: 'Male',
+    phone: '+91 90000 00005',
+    language: 'Hindi',
+    village: 'Barkheda',
+    risk: 'high'
+  },
+  {
+    id: 'pat-6',
+    name: 'Kavita Sharma',
+    age: 42,
+    sex: 'Female',
+    phone: '+91 90000 00006',
+    language: 'Hindi',
+    village: 'Kheriya',
+    risk: 'normal'
+  },
+  {
+    id: 'pat-7',
+    name: 'Raju Verma',
+    age: 8,
+    sex: 'Male',
+    phone: '+91 90000 00007',
+    language: 'Hindi',
+    village: 'Bhanpur',
+    risk: 'normal'
+  },
+  {
+    id: 'pat-8',
+    name: 'Priya Singh',
+    age: 29,
+    sex: 'Female',
+    phone: '+91 90000 00008',
+    language: 'English',
+    village: 'Govindpura',
+    risk: 'normal'
+  },
+  {
+    id: 'pat-9',
+    name: 'Gopal Das',
+    age: 71,
+    sex: 'Male',
+    phone: '+91 90000 00009',
+    language: 'Hindi',
+    village: 'Barkheda',
+    risk: 'high'
   }
 ];
 
@@ -583,6 +682,24 @@ for (const patient of patients) {
   const account = users.find(u => u.patientId === patient.id);
   if (account) { account.phone = patient.phone || account.phone || ''; persistUser(account); }
 }
+
+function hydrateCareTeamMessages(patientId?: string) {
+  const rows = patientId
+    ? db.prepare(`SELECT id,patient_id as patientId,sender_role as senderRole,sender_id as senderId,sender_name as senderName,recipient_role as recipientRole,recipient_id as recipientId,recipient_name as recipientName,message,created_at as createdAt,read_at as readAt FROM care_team_messages WHERE patient_id=? ORDER BY created_at ASC`).all(patientId) as any[]
+    : db.prepare(`SELECT id,patient_id as patientId,sender_role as senderRole,sender_id as senderId,sender_name as senderName,recipient_role as recipientRole,recipient_id as recipientId,recipient_name as recipientName,message,created_at as createdAt,read_at as readAt FROM care_team_messages ORDER BY created_at ASC LIMIT 200`).all() as any[];
+  return rows;
+}
+
+function seedCareTeamMessages() {
+  const count = Number((db.prepare('SELECT COUNT(*) AS c FROM care_team_messages').get() as any)?.c || 0);
+  if (count > 0) return;
+  const seed = db.prepare(`INSERT INTO care_team_messages (id,patient_id,sender_role,sender_id,sender_name,recipient_role,recipient_id,recipient_name,message,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  const t = now();
+  seed.run(uid('msg'),'pat-1','health_worker','user-worker','Sita ASHA','patient','user-patient','Meera Devi','Hello Meera. I am checking your symptoms and will help you connect with the doctor.',''+t);
+  seed.run(uid('msg'),'pat-1','patient','user-patient','Meera Devi','health_worker','user-worker','Sita ASHA','Thank you. My headache is still there and I am ready for the doctor review.',''+new Date(Date.now()+1000).toISOString());
+  seed.run(uid('msg'),'pat-1','doctor','user-doctor','Dr. Ananya Sharma','patient','user-patient','Meera Devi','I have reviewed your case. Sita will help with the next step and I will remain available for clinical review.',''+new Date(Date.now()+2000).toISOString());
+}
+seedCareTeamMessages();
 
 
 // Persist editable patient health context. Seed only missing rows so existing patient-entered
@@ -599,7 +716,11 @@ for (const saved of savedPatientStorage) {
   try {
     const stored = JSON.parse(saved.patient_json);
     const p = patients.find(x => x.id === saved.patient_id);
-    if (p && stored) Object.assign(p, stored, { id: p.id });
+    if (p && stored) {
+      Object.assign(p, stored, { id: p.id });
+    } else if (stored && stored.id) {
+      patients.push(stored);
+    }
   } catch {}
 }
 for (const p of patients) {
@@ -685,11 +806,16 @@ const appointments: Appointment[] = [
 if ((db.prepare('SELECT COUNT(*) AS c FROM appointments_db').get() as any).c === 0) {
   for (const a of appointments as any[]) {
     const date = a.startsAt.slice(0,10), time = a.startsAt.slice(11,16);
-    const slot = db.prepare('SELECT id FROM appointment_slots WHERE doctor_id=? AND slot_date=? AND start_time=?').get(a.doctorId, date, time) as any;
-    if (slot) {
+    let slot = db.prepare('SELECT id FROM appointment_slots WHERE doctor_id=? AND slot_date=? AND start_time=?').get(a.doctorId, date, time) as any;
+    if (!slot) {
+      const slotId = `slot-${a.doctorId}-${a.facilityId}-${date}-${time.replace(':','')}`;
+      db.prepare(`INSERT OR IGNORE INTO appointment_slots (id,doctor_id,facility_id,slot_date,start_time,end_time,status,capacity,booked_count) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(slotId, a.doctorId, a.facilityId, date, time, '11:00', 'available', 3, 1);
+      slot = { id: slotId };
+    } else {
       db.prepare(`UPDATE appointment_slots SET booked_count=1, status='available' WHERE id=?`).run(slot.id);
-      db.prepare(`INSERT INTO appointments_db (id,patient_id,facility_id,doctor_id,slot_id,starts_at,token,status,shared_document_ids) VALUES (?,?,?,?,?,?,?,?,?)`).run(a.id,a.patientId,a.facilityId,a.doctorId,slot.id,a.startsAt,a.token,a.status,'[]');
     }
+    db.prepare(`INSERT INTO appointments_db (id,patient_id,facility_id,doctor_id,slot_id,starts_at,token,status,shared_document_ids) VALUES (?,?,?,?,?,?,?,?,?)`).run(a.id,a.patientId,a.facilityId,a.doctorId,slot.id,a.startsAt,a.token,a.status,'[]');
   }
 }
 
@@ -700,11 +826,237 @@ function safeJson<T>(value: any, fallback: T): T {
 function hydrateIntakes(): IntakeSummary[] {
   return (db.prepare(`SELECT id,patient_id as patientId,appointment_id as appointmentId,symptoms,summary,red_flags as redFlags,status,created_at as createdAt FROM intakes_db ORDER BY created_at DESC`).all() as any[]).map(x => ({ ...x, symptoms: safeJson<string[]>(x.symptoms, []), redFlags: safeJson<string[]>(x.redFlags, []) }));
 }
-function hydrateConsultations(): Consultation[] {
-  return (db.prepare(`SELECT id,patient_id as patientId,doctor_id as doctorId,diagnosis,notes,created_at as createdAt FROM consultations_db ORDER BY created_at DESC`).all() as any[]).map(x => ({ ...x, diagnosis: safeJson<string[]>(x.diagnosis, []) }));
+function hydrateConsultations(): any[] {
+  return (db.prepare(`SELECT id,patient_id as patientId,doctor_id as doctorId,diagnosis,notes,created_at as createdAt FROM consultations_db ORDER BY created_at DESC`).all() as any[]).map(x => {
+    const doc = doctors.find(d => d.id === x.doctorId);
+    return {
+      ...x,
+      doctorName: doc?.name || (x.doctorId === 'worker-1' ? 'ASHA Health Worker' : 'Dr. Ananya Sharma'),
+      diagnosis: safeJson<string[]>(x.diagnosis, [])
+    };
+  });
 }
-function hydratePrescriptions(): Prescription[] {
-  return (db.prepare(`SELECT id,patient_id as patientId,consultation_id as consultationId,medicines FROM prescriptions_db ORDER BY created_at DESC`).all() as any[]).map(x => ({ ...x, medicines: safeJson<any[]>(x.medicines, []) }));
+function hydratePrescriptions(): any[] {
+  return (db.prepare(`SELECT id,patient_id as patientId,consultation_id as consultationId,medicines,created_at as createdAt FROM prescriptions_db ORDER BY created_at DESC`).all() as any[]).map(x => {
+    const con = db.prepare(`SELECT doctor_id,notes FROM consultations_db WHERE id=?`).get(x.consultationId) as any;
+    const doc = con ? doctors.find(d => d.id === con.doctor_id) : null;
+    return {
+      ...x,
+      doctorName: doc?.name || 'Dr. Ananya Sharma',
+      doctorNotes: con?.notes || '',
+      medicines: safeJson<any[]>(x.medicines, [])
+    };
+  });
+}
+function hydrateDiagnosticOrders(patientId?: string): DiagnosticOrder[] {
+  const rows = patientId
+    ? db.prepare(`SELECT id,patient_id as patientId,case_id as caseId,test_name as testName,facility_name as facilityName,status,ordered_at as orderedAt FROM diagnostic_orders WHERE patient_id=? ORDER BY ordered_at DESC`).all(patientId)
+    : db.prepare(`SELECT id,patient_id as patientId,case_id as caseId,test_name as testName,facility_name as facilityName,status,ordered_at as orderedAt FROM diagnostic_orders ORDER BY ordered_at DESC`).all();
+  return rows as any[];
+}
+
+// ── Deterministic severity rule engine (doc-side governance, DB-backed) ────
+function computeSeverity(symptoms: string[], redFlags: string[], patientAge: number): {
+  level: 'critical' | 'urgent' | 'concerning' | 'routine';
+  reasoning: string;
+  override?: { overridden: boolean; ruleName: string; originalLevel: string; reason: string };
+} {
+  const text = [...symptoms, ...redFlags].join(' ').toLowerCase();
+  // CRITICAL rules — deterministic red-flag governance
+  if (/pregnan|gestation/.test(text) && /headache|vision|blurr|swell/.test(text))
+    return { level: 'critical', reasoning: 'Pregnancy with hypertensive symptoms (possible pre-eclampsia). Immediate obstetric assessment required.', override: { overridden: true, ruleName: 'MATERNAL_HYPERTENSION_OVERRIDE', originalLevel: 'urgent', reason: 'Pregnancy + headache/vision/swelling → escalated to CRITICAL per maternal safety protocol.' } };
+  if (/chest|crushing|cardiac|heart/.test(text) && /pain|pressure|tight/.test(text))
+    return { level: 'critical', reasoning: 'Chest pain pattern consistent with acute coronary syndrome. Immediate cardiac evaluation required.', override: { overridden: true, ruleName: 'CHEST_PAIN_ACS_OVERRIDE', originalLevel: 'urgent', reason: 'Chest pain with exertion/radiation → escalated to CRITICAL per cardiac protocol.' } };
+  if (/stroke|hemiplegia|paralys|facial droop|slurr/.test(text))
+    return { level: 'critical', reasoning: 'Acute neurological presentation consistent with stroke. Golden-hour thrombolysis window.', override: { overridden: true, ruleName: 'ACUTE_STROKE_OVERRIDE', originalLevel: 'urgent', reason: 'Focal neurology + acute onset → escalated to CRITICAL per stroke protocol.' } };
+  if (/unconscious|unresponsive|seizure|convuls/.test(text))
+    return { level: 'critical', reasoning: 'Altered consciousness or seizure activity — life-threatening emergency.' };
+  // URGENT rules
+  if (patientAge <= 12 && /fever|temperature/.test(text))
+    return { level: 'urgent', reasoning: `Paediatric patient (age ${patientAge}) with fever. Rapid clinical assessment required to rule out sepsis or meningitis.` };
+  if (/tb|tuberculosis|sputum|haemoptysis/.test(text))
+    return { level: 'urgent', reasoning: 'Respiratory symptoms consistent with pulmonary TB. NTEP referral and sputum microscopy required.' };
+  if (/appendic|right lower|peritonit/.test(text))
+    return { level: 'urgent', reasoning: 'Acute abdominal pain pattern — surgical evaluation and USG required urgently.' };
+  if (/bleed|haemorrhage|hemorrhage/.test(text))
+    return { level: 'urgent', reasoning: 'Active or reported bleeding — requires prompt clinical assessment.' };
+  if (/breath|dyspnoea|shortness of breath/.test(text))
+    return { level: 'urgent', reasoning: 'Respiratory distress reported. Oxygen saturation assessment required.' };
+  // CONCERNING rules
+  if (/diabetes|sugar|hba1c/.test(text) || /hypertension|bp|blood pressure/.test(text))
+    return { level: 'concerning', reasoning: 'Chronic disease management concern. Review medication compliance and vitals.' };
+  if (/rash|skin|itch|allerg/.test(text))
+    return { level: 'concerning', reasoning: 'Dermatological presentation. Assess for allergic reaction or infection.' };
+  if (/knee|joint|stiffness|arthrit/.test(text))
+    return { level: 'concerning', reasoning: 'Musculoskeletal complaint. Functional assessment recommended.' };
+  // ROUTINE default
+  return { level: 'routine', reasoning: 'No immediate red-flag pattern detected. Routine clinical review at next available appointment.' };
+}
+
+function computeStructuredSummary(symptoms: string[], redFlags: string[], rawSummary: string) {
+  const text = symptoms.join(' ').toLowerCase();
+  let chiefComplaint = symptoms[0] || rawSummary.slice(0, 60);
+  let duration = 'Not specified';
+  const durationMatch = rawSummary.match(/(\d+)\s*(day|week|hour|month)/i);
+  if (durationMatch) duration = `${durationMatch[1]} ${durationMatch[2]}(s)`;
+  const conditions: string[] = [];
+  const medications: string[] = [];
+  if (/pregnan|gestation/.test(text)) conditions.push('Pregnancy');
+  if (/hypertension|bp/.test(text)) { conditions.push('Hypertension'); medications.push('Amlodipine (reported)'); }
+  if (/diabetes/.test(text)) { conditions.push('Diabetes'); medications.push('Antidiabetic (reported)'); }
+  if (/tb|tuberculosis/.test(text)) conditions.push('Suspected TB');
+  return {
+    chiefComplaint,
+    duration,
+    symptoms,
+    history: { conditions, medications, allergies: [] as string[] },
+    redFlags
+  };
+}
+
+function buildLongitudinalHistory(patientId: string) {
+  const history: any[] = [];
+  const facilityName = 'Seva Rural Health Centre';
+  const appts = (db.prepare('SELECT id,starts_at,status,doctor_id FROM appointments_db WHERE patient_id=? ORDER BY starts_at').all(patientId) as any[]);
+  for (const a of appts) {
+    const doc = doctors.find(d => d.id === a.doctor_id);
+    history.push({ id: `hist-apt-${a.id}`, date: String(a.starts_at || '').slice(0,10), facility: facilityName, type: 'visit', title: `${a.status === 'completed' ? 'Completed visit' : 'Booked appointment'} · ${doc?.name || 'Clinician'}`, detail: a.status === 'completed' ? 'Appointment completed.' : 'Appointment booked — pending visit.', doctorName: doc?.name, status: a.status });
+  }
+  const consultations = (db.prepare('SELECT id,created_at,notes,diagnosis FROM consultations_db WHERE patient_id=? ORDER BY created_at').all(patientId) as any[]);
+  for (const c of consultations) {
+    history.push({ id: `hist-con-${c.id}`, date: String(c.created_at || '').slice(0,10), facility: facilityName, type: 'visit', title: 'Teleconsultation / Clinical Notes', detail: c.notes || 'Consultation recorded.', doctorName: 'Dr. Ananya Sharma', status: 'completed' });
+  }
+  const rxs = (db.prepare('SELECT id,created_at,medicines FROM prescriptions_db WHERE patient_id=? ORDER BY created_at').all(patientId) as any[]);
+  for (const rx of rxs) {
+    const meds = safeJson<any[]>(rx.medicines, []).map((m: any) => m.name || m).join(', ');
+    history.push({ id: `hist-rx-${rx.id}`, date: String(rx.created_at || '').slice(0,10), facility: facilityName, type: 'prescription', title: 'E-Prescription Issued', detail: meds || 'Medicines prescribed.', doctorName: 'Dr. Ananya Sharma', status: 'active' });
+  }
+  const refs = (db.prepare('SELECT id,created_at,reason,status,to_facility_name FROM referrals WHERE patient_id=? ORDER BY created_at').all(patientId) as any[]);
+  for (const r of refs) {
+    history.push({ id: `hist-ref-${r.id}`, date: String(r.created_at || '').slice(0,10), facility: facilityName, type: 'referral', title: `Referral → ${r.to_facility_name || 'Specialist'}`, detail: r.reason || 'Referred for specialist evaluation.', status: r.status });
+  }
+  const diags = (db.prepare('SELECT id,ordered_at,test_name,facility_name,status FROM diagnostic_orders WHERE patient_id=? ORDER BY ordered_at').all(patientId) as any[]);
+  for (const d of diags) {
+    history.push({ id: `hist-diag-${d.id}`, date: String(d.ordered_at || '').slice(0,10), facility: d.facility_name || facilityName, type: 'diagnostic', title: `Diagnostic Ordered: ${d.test_name}`, detail: `Status: ${d.status}`, status: d.status });
+  }
+  return history.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+function hydrateTriageCases(): any[] {
+  const rows = db.prepare('SELECT * FROM triage_cases ORDER BY submitted_at DESC').all() as any[];
+  return rows.map(row => {
+    const patient = patients.find(p => p.id === row.patient_id);
+    const submittedAt = String(row.submitted_at || '');
+    const msAgo = Date.now() - new Date(submittedAt).getTime();
+    const minsAgo = Math.floor(msAgo / 60000);
+    const timeAgo = minsAgo < 60 ? `${minsAgo} min ago` : minsAgo < 1440 ? `${Math.floor(minsAgo/60)}h ago` : `${Math.floor(minsAgo/1440)}d ago`;
+    const summary = safeJson<any>(row.summary_json, {});
+    const override = safeJson<any>(row.override_json, {});
+    let frontlineWorker = row.frontline_worker_json ? safeJson<any>(row.frontline_worker_json, null) : null;
+    if (row.assigned_worker_id) {
+      const hw = db.prepare('SELECT id, name, phone, facility_id FROM health_workers WHERE id=?').get(row.assigned_worker_id) as any;
+      if (hw) {
+        frontlineWorker = {
+          name: hw.name,
+          role: 'ASHA Worker',
+          phone: hw.phone,
+          status: (frontlineWorker?.status || 'dispatched') as any,
+          distance: frontlineWorker?.distance || '1.5 km'
+        };
+      }
+    }
+    // Pull live workers for display if none assigned
+    const availableWorkers = (db.prepare('SELECT id,name,phone,facility_id FROM health_workers WHERE active=1').all() as any[]).map(w => ({ id: w.id, name: w.name, role: 'ASHA Worker', phone: w.phone, status: 'available' as const, distance: '1.5 km' }));
+    return {
+      id: row.id,
+      patientId: row.patient_id,
+      intakeId: row.intake_id,
+      patientName: patient?.name || 'Unknown',
+      patientAge: patient?.age || 0,
+      patientGender: patient?.sex || 'Unknown',
+      patientLanguage: patient?.language || 'Hindi',
+      patientAbha: patient?.abhaId,
+      patientVillage: patient?.village || '',
+      submittedAt,
+      timeAgo,
+      status: (row.case_status || 'new') as any,
+      severity: {
+        level: (row.severity_level || 'concerning') as any,
+        reasoning: row.severity_reasoning || '',
+        override: override?.overridden ? override : undefined
+      },
+      summary,
+      transcript: safeJson<any[]>(row.transcript_json, []),
+      longitudinalHistory: buildLongitudinalHistory(row.patient_id),
+      frontlineWorker,
+      followUpDate: row.follow_up_date || undefined,
+      notes: row.notes || undefined,
+      _availableWorkers: availableWorkers
+    };
+  });
+}
+
+function autoCreateTriageCase(
+  patientId: string,
+  intakeId: string,
+  symptoms: string[],
+  redFlags: string[],
+  rawSummary: string,
+  appointmentId?: string,
+  doctorId?: string,
+  careReviewRequestId?: string,
+  referralId?: string,
+  assignedWorkerId?: string
+) {
+  // Only create if no open case already exists for this intake
+  const existing = db.prepare('SELECT id FROM triage_cases WHERE intake_id=?').get(intakeId) as any;
+  if (existing) return existing;
+  const patient = patients.find(p => p.id === patientId);
+  const age = patient?.age || 0;
+  const { level, reasoning, override } = computeSeverity(symptoms, redFlags, age);
+  const summary = computeStructuredSummary(symptoms, redFlags, rawSummary);
+  const caseId = uid('case');
+  const transcript = symptoms.map((s, i) => ({
+    question: i === 0 ? 'What is the main reason for your visit today?' : `Can you describe your ${s.toLowerCase()} further?`,
+    answer: s,
+    timestamp: now()
+  }));
+  db.prepare('INSERT INTO triage_cases (id,patient_id,intake_id,appointment_id,doctor_id,care_review_request_id,referral_id,assigned_worker_id,severity_level,severity_reasoning,override_json,case_status,summary_json,transcript_json,submitted_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+    caseId, patientId, intakeId,
+    appointmentId || null, doctorId || null, careReviewRequestId || null, referralId || null, assignedWorkerId || null,
+    level, reasoning,
+    JSON.stringify(override || {}), 'new',
+    JSON.stringify(summary), JSON.stringify(transcript),
+    now(), now()
+  );
+  return { id: caseId };
+}
+
+// Seed demo triage cases from existing patients on first boot (only if no cases exist)
+try {
+  const caseCount = Number((db.prepare('SELECT COUNT(*) AS c FROM triage_cases').get() as any)?.c || 0);
+  if (caseCount === 0) {
+    const demoIntakes = [
+      { patientId: 'pat-1', symptoms: ['Headache for 2 days', 'Blurred vision', 'Swelling in feet', '28 weeks pregnant'], flags: ['Pregnancy with possible pre-eclampsia symptoms'], summary: '28-year-old pregnant patient with headache, blurred vision and pedal oedema for 2 days.' },
+      { patientId: 'pat-2', symptoms: ['Crushing chest pain', 'Radiating to left arm', 'Diaphoresis'], flags: ['Chest pain with radiation — possible ACS'], summary: '62-year-old male with acute chest pain radiating to left arm with diaphoresis.' },
+      { patientId: 'pat-4', symptoms: ['High fever for 3 days', 'Cough with sputum', 'Night sweats'], flags: ['Sputum-producing cough with night sweats — TB screening required'], summary: '34-year-old with persistent productive cough, fever and night sweats.' },
+      { patientId: 'pat-5', symptoms: ['Severe abdominal pain', 'Right lower quadrant', 'Nausea', 'Low-grade fever'], flags: ['RLQ pain — appendicitis evaluation required'], summary: '55-year-old male with acute right lower quadrant pain and guarding.' },
+      { patientId: 'pat-6', symptoms: ['BP refill request', 'Hypertension on Amlodipine', 'Occasional headaches'], flags: [], summary: '42-year-old hypertensive patient requesting medication refill.' },
+      { patientId: 'pat-7', symptoms: ['High fever 104°F', 'Rash on trunk', 'Lethargy', 'Poor feeding'], flags: ['Child with high fever and rash — urgent paediatric review'], summary: '8-year-old with high fever, trunk rash and lethargy for 2 days.' },
+      { patientId: 'pat-8', symptoms: ['Knee pain', 'Joint stiffness in the morning', 'Mild swelling'], flags: [], summary: '29-year-old with bilateral knee pain and morning stiffness.' },
+      { patientId: 'pat-9', symptoms: ['Acute slurring of speech', 'Right-sided facial droop', 'Weakness in right arm'], flags: ['Acute stroke symptoms — golden hour critical'], summary: '71-year-old with sudden onset slurring, facial droop and arm weakness.' }
+    ];
+    for (const demo of demoIntakes) {
+      // Ensure demo patient exists in patients array (extra patients are seeded above)
+      if (!patients.some(p => p.id === demo.patientId)) continue;
+      const intakeId = uid('int');
+      db.prepare('INSERT OR IGNORE INTO intakes_db (id,patient_id,symptoms,summary,red_flags,status,created_at) VALUES (?,?,?,?,?,?,?)').run(intakeId, demo.patientId, JSON.stringify(demo.symptoms), demo.summary, JSON.stringify(demo.flags), 'pending_review', now());
+      autoCreateTriageCase(demo.patientId, intakeId, demo.symptoms, demo.flags, demo.summary);
+    }
+    console.log('Demo triage cases seeded from real patient records.');
+  }
+} catch (seedError) {
+  console.warn('Demo triage case seeding skipped:', seedError);
 }
 if (Number((db.prepare('SELECT COUNT(*) AS c FROM intakes_db').get() as any).c || 0) === 0) {
   db.prepare(`INSERT INTO intakes_db (id,patient_id,appointment_id,symptoms,summary,red_flags,status,created_at) VALUES (?,?,?,?,?,?,?,?)`).run('int-1','pat-1','apt-1',JSON.stringify(['Headache for 2 days','Blurred vision','Swelling in feet']),'28-year-old, 7 months pregnant. Reports headache, blurred vision and pedal swelling for 2 days. Blood pressure assessment is recommended urgently.',JSON.stringify(['Pregnancy with possible pre-eclampsia symptoms']),'pending_review',now());
@@ -780,18 +1132,70 @@ function dashboard() {
     consultations: hydrateConsultations(),
     prescriptions: hydratePrescriptions(),
     teleconsultList: (db.prepare(`SELECT * FROM teleconsults ORDER BY requested_at DESC LIMIT 20`).all() as any[]).map((t:any)=>({ ...t, patientName: patients.find(p=>p.id===t.patient_id)?.name || 'Patient', doctorName: doctors.find(d=>d.id===t.doctor_id)?.name || 'Doctor' })),
-    workload: doctors.map(d => ({ ...d, patients: allAppointments.filter((a: any) => a.doctorId === d.id && a.status === 'booked').length }))
+    workload: doctors.map(d => ({ ...d, patients: allAppointments.filter((a: any) => a.doctorId === d.id && a.status === 'booked').length })),
+    resourceOverview: {
+      frontlineWorkers: (db.prepare('SELECT id,name,phone,facility_id FROM health_workers WHERE active=1').all() as any[]).map(w => {
+        const assignedCases = db.prepare("SELECT id, patient_id, severity_level, case_status FROM triage_cases WHERE assigned_worker_id=? AND case_status != 'resolved'").all(w.id) as any[];
+        return {
+          id: w.id,
+          name: w.name,
+          role: 'ASHA Worker',
+          phone: w.phone,
+          status: assignedCases.length > 0 ? 'dispatched' : 'available',
+          location: `Facility ${w.facility_id || 'fac-1'} (1.5 km)`,
+          activeDispatches: assignedCases.length
+        };
+      })
+    }
   };
 }
 
 
 app.get('/api/bootstrap', (req, res) => {
   try {
-    const actor = users.find(u => u.id === req.header('x-demo-user-id'));
+    const requestedRole = req.query.role ? String(req.query.role) : undefined;
+    const requestedPatientId = req.query.patientId ? String(req.query.patientId) : undefined;
+    const headerUserId = req.header('x-demo-user-id');
+    let actor = headerUserId ? users.find(u => u.id === headerUserId) : undefined;
+    if (!actor && requestedRole) {
+      actor = users.find(u => u.role === requestedRole);
+    }
+    if (requestedPatientId && (!actor || actor.role === 'patient')) {
+      actor = {
+        id: `user-${requestedPatientId}`,
+        name: patients.find(p => p.id === requestedPatientId)?.name || 'Patient',
+        email: 'patient@example.com',
+        password: '',
+        role: 'patient',
+        patientId: requestedPatientId
+      };
+    }
     const coreAppointments = hydrateAppointments();
 
     if (actor?.role === 'patient' && actor.patientId) {
       const mine = <T extends { patientId: string }>(items: T[]) => items.filter(item => item.patientId === actor.patientId);
+      const activeCaseRow = (db.prepare("SELECT * FROM triage_cases WHERE patient_id=? AND case_status != 'resolved' ORDER BY submitted_at DESC LIMIT 1").get(actor.patientId) as any);
+      let dispatchedWorker: any = null;
+      if (activeCaseRow?.assigned_worker_id) {
+        const hw = db.prepare('SELECT id, name, phone, facility_id FROM health_workers WHERE id=?').get(activeCaseRow.assigned_worker_id) as any;
+        const parsedJson = activeCaseRow.frontline_worker_json ? safeJson<any>(activeCaseRow.frontline_worker_json, null) : null;
+        if (hw) {
+          dispatchedWorker = {
+            id: hw.id,
+            name: hw.name,
+            role: 'ASHA Worker',
+            phone: hw.phone,
+            status: parsedJson?.status || 'dispatched',
+            distance: parsedJson?.distance || '1.5 km',
+            dispatchedAt: activeCaseRow.updated_at || activeCaseRow.submitted_at
+          };
+        } else if (parsedJson) {
+          dispatchedWorker = parsedJson;
+        }
+      } else if (activeCaseRow?.frontline_worker_json) {
+        dispatchedWorker = safeJson<any>(activeCaseRow.frontline_worker_json, null);
+      }
+
       return res.json({
         facility,
         doctors,
@@ -802,18 +1206,45 @@ app.get('/api/bootstrap', (req, res) => {
         medicalDocuments: mine(hydrateMedicalDocuments()),
         consultations: mine(hydrateConsultations()),
         prescriptions: mine(hydratePrescriptions()),
-        referrals: mine(referrals),
+        diagnosticOrders: mine(hydrateDiagnosticOrders(actor.patientId)),
+        referrals: mine(hydrateReferrals()),
+        dispatchedWorker,
+        activeCase: activeCaseRow ? {
+          id: activeCaseRow.id,
+          status: activeCaseRow.case_status,
+          severity: activeCaseRow.severity_level,
+          notes: activeCaseRow.notes,
+          followUpDate: activeCaseRow.follow_up_date
+        } : null,
         precautions: mine(hydratePrecautions()),
         consentRequests: mine(hydrateConsentRequests()),
         dashboard: null,
         audit: mine(audit as any[]),
         notifications: hydrateNotifications(actor.patientId),
+        careTeamMessages: hydrateCareTeamMessages(actor.patientId),
         emergencyAlerts: mine(hydrateEmergencyAlerts()),
         careReviewRequests: mine(hydrateCareReviewRequests()),
         teleconsults: (db.prepare(`SELECT * FROM teleconsults WHERE patient_id=? ORDER BY requested_at DESC`).all(actor.patientId) as any[]),
         workspaceMode: 'full-db'
       });
     }
+
+    const allCases = hydrateTriageCases();
+    const dispatchedTasks = allCases
+      .filter(c => c.frontlineWorker && c.status !== 'resolved')
+      .map(c => ({
+        caseId: c.id,
+        patientId: c.patientId,
+        patientName: c.patientName,
+        patientAge: c.patientAge,
+        patientSex: c.patientGender,
+        locality: c.patientVillage || 'Locality not recorded',
+        reason: c.summary?.chiefComplaint || c.notes || 'Home vitals check',
+        status: c.frontlineWorker?.status || 'dispatched',
+        patientVitals: c.frontlineWorker?.vitalsRecorded || '',
+        patientPhone: patients.find(p => p.id === c.patientId)?.phone || '',
+        dispatchedAt: c.submittedAt
+      }));
 
     return res.json({
       facility,
@@ -824,15 +1255,22 @@ app.get('/api/bootstrap', (req, res) => {
       intakes: hydrateIntakes(),
       consultations: hydrateConsultations(),
       prescriptions: hydratePrescriptions(),
+      diagnosticOrders: hydrateDiagnosticOrders(),
       referrals: hydrateReferrals(),
+      cases: allCases,
+      dispatchedTasks,
       teleconsults: (db.prepare(`SELECT * FROM teleconsults ORDER BY requested_at DESC LIMIT 20`).all() as any[]).map((t:any)=>({ ...t, patientName: patients.find(p=>p.id===t.patient_id)?.name || 'Patient', doctorName: doctors.find(d=>d.id===t.doctor_id)?.name || 'Doctor' })),
       precautions: hydratePrecautions(),
       consentRequests: hydrateConsentRequests(),
       medicalDocuments: hydrateMedicalDocuments(),
-      emergencyAlerts: hydrateEmergencyAlerts(),
+      // Health workers receive only alerts assigned to their worker record; doctors receive status without coordinates.
+      emergencyAlerts: actor?.role === 'health_worker'
+        ? (() => { const ids = (db.prepare('SELECT id FROM health_workers WHERE user_id=?').all(actor.id) as any[]).map((x:any)=>x.id); return hydrateEmergencyAlerts().filter((a:any) => ids.includes(a.assignedWorkerId)); })()
+        : hydrateEmergencyAlerts().map((a:any) => ({ ...a, latitude: null, longitude: null, locationAccuracy: null, assignedWorkerPhone: null })),
       careReviewRequests: hydrateCareReviewRequests(),
       audit,
       notifications: hydrateNotifications(),
+      careTeamMessages: hydrateCareTeamMessages(),
       dashboard: dashboard(),
       workspaceMode: 'full-db'
     });
@@ -1215,7 +1653,12 @@ app.get('/api/medical-documents/:patientId', (req, res) => {
 });
 
 app.post('/api/intakes', (req, res) => {
-  const symptoms: string[] = req.body.symptoms || [];
+  const rawSymptoms = req.body.symptoms;
+  const symptoms: string[] = Array.isArray(rawSymptoms) 
+    ? rawSymptoms 
+    : typeof rawSymptoms === 'string' 
+      ? rawSymptoms.split(',').map(s => s.trim()).filter(Boolean) 
+      : [];
   const redFlags = symptoms.filter((x: string) => /chest|breath|bleed|pregnan|unconscious/i.test(x));
   
   const i: IntakeSummary = {
@@ -1231,6 +1674,9 @@ app.post('/api/intakes', (req, res) => {
 
   db.prepare(`INSERT INTO intakes_db (id,patient_id,appointment_id,symptoms,summary,red_flags,status,created_at) VALUES (?,?,?,?,?,?,?,?)`)
     .run(i.id, i.patientId, i.appointmentId || null, JSON.stringify(i.symptoms), i.summary, JSON.stringify(i.redFlags), i.status, i.createdAt);
+
+  // Auto-create a triage case for every intake (per merge design Q1)
+  autoCreateTriageCase(i.patientId, i.id, symptoms, redFlags, i.summary, i.appointmentId);
 
   log(i.patientId, 'AI intake submitted — pending clinical review');
   res.status(201).json(i);
@@ -1318,6 +1764,12 @@ app.post('/api/consultations', (req, res) => {
   const a = db.prepare('SELECT * FROM appointments_db WHERE id=?').get(req.body.appointmentId) as any;
   if (a) { db.prepare(`UPDATE appointments_db SET status='completed' WHERE id=?`).run(a.id); db.prepare(`UPDATE appointment_slots SET booked_count=MAX(0, booked_count-1), status=CASE WHEN MAX(0, booked_count-1) >= capacity THEN 'full' ELSE 'available' END WHERE id=?`).run(a.slot_id); }
   
+  if (req.body.caseId) {
+    db.prepare("UPDATE triage_cases SET case_status='action_taken', doctor_id=?, updated_at=? WHERE id=?").run(c.doctorId, now(), req.body.caseId);
+  } else if (req.body.appointmentId) {
+    db.prepare("UPDATE triage_cases SET case_status='action_taken', doctor_id=?, updated_at=? WHERE appointment_id=?").run(c.doctorId, now(), req.body.appointmentId);
+  }
+
   log(c.patientId, 'Consultation completed and prescription issued');
   res.status(201).json({ consultation: c, prescription: createdPrescription });
 });
@@ -1393,6 +1845,21 @@ app.post('/api/care-review-requests', (req, res) => {
   if (existing) return res.json({ id: existing.id, status: 'pending', message: 'A review request is already pending for this patient.' });
   const id = uid('review');
   db.prepare(`INSERT INTO care_review_requests (id,patient_id,sent_by,reason,status,created_at) VALUES (?,?,?,?,?,?)`).run(id, patientId, sentBy, String(reason).trim(), 'pending', now());
+
+  // Auto-create / link to doctor triage queue
+  const isUrgent = /urgent|critical|emergency|deteriorat|chest|breath|fever|bleed/i.test(reason);
+  const flags = isUrgent ? ['Health worker flagged clinical concern for doctor review'] : [];
+  autoCreateTriageCase(
+    patientId,
+    `int-review-${id}`,
+    [`Health worker review request: ${String(reason).trim()}`],
+    flags,
+    `Frontline worker (${sentBy}) requested clinical review: ${String(reason).trim()}`,
+    undefined,
+    undefined,
+    id
+  );
+
   log(patientId, `Health worker requested clinical review: ${String(reason).trim()}`);
   res.status(201).json({ id, status: 'pending', message: 'Clinical review request sent to the doctor.' });
 });
@@ -1403,6 +1870,9 @@ app.patch('/api/care-review-requests/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM care_review_requests WHERE id=?').get(req.params.id) as any;
   if (!row) return res.status(404).json({ message: 'Review request not found.' });
   db.prepare('UPDATE care_review_requests SET status=?, reviewed_at=? WHERE id=?').run(status, status === 'pending' ? null : now(), row.id);
+  if (status === 'reviewed' || status === 'cancelled') {
+    db.prepare("UPDATE triage_cases SET case_status='resolved', updated_at=? WHERE care_review_request_id=?").run(now(), row.id);
+  }
   res.json({ id: row.id, status });
 });
 
@@ -1507,6 +1977,64 @@ app.patch('/api/precautions/:id/resolve', (req, res) => {
   res.json(hydratePrecautions().find(x => x.id === row.id));
 });
 
+app.get('/api/care-team/messages', (req, res) => {
+  const patientId = String(req.query.patientId || '');
+  if (!patientId || !patients.some(p => p.id === patientId)) return res.status(404).json({ message: 'Patient not found.' });
+  res.json({ messages: hydrateCareTeamMessages(patientId) });
+});
+
+app.post('/api/care-team/messages', (req, res) => {
+  const patientId = String(req.body.patientId || '');
+  const senderRole = String(req.body.senderRole || '');
+  const senderId = req.body.senderId ? String(req.body.senderId) : null;
+  const senderName = String(req.body.senderName || '').trim();
+  const recipientRole = String(req.body.recipientRole || '');
+  const recipientId = req.body.recipientId ? String(req.body.recipientId) : null;
+  const recipientName = String(req.body.recipientName || '').trim();
+  const message = String(req.body.message || '').trim();
+  const allowed = ['patient','health_worker','doctor'];
+  if (!patientId || !patients.some(p => p.id === patientId)) return res.status(404).json({ message: 'Patient not found.' });
+  if (!allowed.includes(senderRole)) return res.status(400).json({ message: 'Invalid sender role.' });
+  if (!['care_team', ...allowed].includes(recipientRole) || recipientRole === senderRole) return res.status(400).json({ message: 'Choose another care-team role.' });
+  if (!senderName || !message) return res.status(400).json({ message: 'Sender and message are required.' });
+  if (message.length > 500) return res.status(400).json({ message: 'Message is too long. Keep it under 500 characters.' });
+  const createdAt = now();
+  const insert = db.prepare(`INSERT INTO care_team_messages (id,patient_id,sender_role,sender_id,sender_name,recipient_role,recipient_id,recipient_name,message,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  const patient = patients.find(p => p.id === patientId) as any;
+  const people: Record<string, {id:string,name:string}> = {
+    patient: { id: `user-${patientId}`, name: patient?.name || 'Patient' },
+    health_worker: { id: 'user-worker', name: 'Sita ASHA' },
+    doctor: { id: 'user-doctor', name: 'Dr. Ananya Sharma' }
+  };
+  const targets = recipientRole === 'care_team'
+    ? allowed.filter(r => r !== senderRole)
+    : [recipientRole];
+  const created: any[] = [];
+  for (const target of targets) {
+    const targetPerson = people[target];
+    const id = uid('msg');
+    insert.run(id, patientId, senderRole, senderId, senderName, target, targetPerson?.id || recipientId, targetPerson?.name || recipientName || 'Care team member', message, createdAt);
+    created.push({ id, recipientRole: target, recipientName: targetPerson?.name || recipientName });
+  }
+  log(patientId, recipientRole === 'care_team'
+    ? `Care-team message broadcast from ${senderRole} to ${targets.join(' and ')}`
+    : `Care-team message sent from ${senderRole} to ${recipientRole}`);
+  res.status(201).json({ message: 'Message delivered to the care team.', created, messages: hydrateCareTeamMessages(patientId) });
+});
+
+// Emergency live-location updates are deliberately restricted to the assigned
+// frontline worker. Doctors never receive these coordinates through bootstrap.
+app.patch('/api/emergency/alerts/:id/location', (req, res) => {
+  const row = db.prepare("SELECT * FROM emergency_alerts WHERE id=? AND status='active'").get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Active emergency alert not found.' });
+  const latitude = Number(req.body.latitude);
+  const longitude = Number(req.body.longitude);
+  const accuracy = Number(req.body.locationAccuracy);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return res.status(400).json({ message: 'Valid location is required.' });
+  db.prepare('UPDATE emergency_alerts SET latitude=?,longitude=?,location_accuracy=? WHERE id=?').run(latitude, longitude, Number.isFinite(accuracy) ? accuracy : null, row.id);
+  res.json({ ok: true, alertId: row.id, latitude, longitude, locationAccuracy: Number.isFinite(accuracy) ? accuracy : null, updatedAt: now() });
+});
+
 app.post('/api/referrals', (req, res) => {
   const patientId = String(req.body.patientId || '');
   const reason = String(req.body.reason || '').trim();
@@ -1544,6 +2072,240 @@ app.get('/api/referrals/token/:token', (req, res) => {
   res.json(row);
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// TRIAGE CASE ROUTES — merged from doc-side into main-all SQLite persistence
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/cases', (_req, res) => {
+  try { res.json(hydrateTriageCases()); }
+  catch (e: any) { console.error('GET /api/cases failed:', e); res.status(500).json({ message: 'Unable to load triage cases.' }); }
+});
+
+app.get('/api/cases/:id', (req, res) => {
+  const c = hydrateTriageCases().find(x => x.id === req.params.id);
+  if (!c) return res.status(404).json({ message: 'Case not found.' });
+  res.json(c);
+});
+
+app.patch('/api/cases/:id/status', (req, res) => {
+  const row = db.prepare('SELECT id,patient_id FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const status = String(req.body.status || '');
+  if (!['new','in_review','action_taken','resolved'].includes(status)) return res.status(400).json({ message: 'Invalid case status.' });
+  db.prepare('UPDATE triage_cases SET case_status=?,updated_at=? WHERE id=?').run(status, now(), row.id);
+  log(row.patient_id, `Triage case ${row.id} status → ${status}`);
+  res.json(hydrateTriageCases().find(x => x.id === row.id));
+});
+
+app.post('/api/cases/:id/prescription', async (req, res) => {
+  const row = db.prepare('SELECT id,patient_id,intake_id,care_review_request_id FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const medicines = req.body.medicines || [];
+  const doctorNotes = req.body.doctorNotes || req.body.notes || '';
+  const consultId = uid('con');
+  db.prepare('INSERT INTO consultations_db (id,patient_id,doctor_id,diagnosis,notes,created_at) VALUES (?,?,?,?,?,?)').run(consultId, row.patient_id, 'doc-1', '[]', doctorNotes, now());
+  const rxId = uid('rx');
+  db.prepare('INSERT INTO prescriptions_db (id,patient_id,consultation_id,medicines,created_at) VALUES (?,?,?,?,?)').run(rxId, row.patient_id, consultId, JSON.stringify(medicines), now());
+  db.prepare('UPDATE triage_cases SET case_status=?,updated_at=? WHERE id=?').run('action_taken', now(), row.id);
+  
+  // Verify intake & care review requests
+  if (row.intake_id) db.prepare("UPDATE intakes_db SET status='verified' WHERE id=?").run(row.intake_id);
+  db.prepare("UPDATE intakes_db SET status='verified' WHERE patient_id=? AND status='pending_review'").run(row.patient_id);
+  db.prepare("UPDATE care_review_requests SET status='reviewed', reviewed_at=? WHERE patient_id=? AND status='pending'").run(now(), row.patient_id);
+
+  // Send notification to patient
+  const medSummary = medicines.map((m: any) => `${m.name}${m.dosage ? ` (${m.dosage})` : ''}`).join(', ');
+  await sendPatientNotification(row.patient_id, null, 'prescription_issued', 'New E-Prescription Issued by Dr. Ananya Sharma', `Dr. Ananya Sharma has issued an e-prescription with medicines: ${medSummary || 'Prescribed medications'}. ${doctorNotes ? `Doctor advice: ${doctorNotes}` : ''}`);
+
+  log(row.patient_id, `E-Prescription issued via triage case ${row.id}`);
+  res.json({ ok: true, prescriptionId: rxId, consultationId: consultId });
+});
+
+app.post('/api/cases/:id/diagnostics', async (req, res) => {
+  const row = db.prepare('SELECT id,patient_id,intake_id,care_review_request_id FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const diagId = uid('diag');
+  const testName = req.body.testName || 'Lab investigation';
+  const facilityName = req.body.facilityName || 'Diagnostic Facility';
+  db.prepare('INSERT INTO diagnostic_orders (id,patient_id,case_id,test_name,facility_name,status,ordered_at) VALUES (?,?,?,?,?,?,?)').run(diagId, row.patient_id, row.id, testName, facilityName, 'ordered', now());
+  db.prepare('UPDATE triage_cases SET case_status=?,updated_at=? WHERE id=?').run('action_taken', now(), row.id);
+
+  // Verify intake
+  if (row.intake_id) db.prepare("UPDATE intakes_db SET status='verified' WHERE id=?").run(row.intake_id);
+  db.prepare("UPDATE intakes_db SET status='verified' WHERE patient_id=? AND status='pending_review'").run(row.patient_id);
+
+  // Send notification to patient
+  await sendPatientNotification(row.patient_id, null, 'diagnostic_ordered', 'Diagnostic Test Ordered by Doctor', `Dr. Ananya Sharma has ordered diagnostic test '${testName}' at ${facilityName}.`);
+
+  log(row.patient_id, `Diagnostic '${testName}' ordered via triage case ${row.id}`);
+  res.json({ ok: true, diagnosticId: diagId });
+});
+
+app.post('/api/cases/:id/referral', async (req, res) => {
+  const row = db.prepare('SELECT id,patient_id,intake_id,care_review_request_id FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const patient = patients.find(p => p.id === row.patient_id);
+  let token = '';
+  do { token = `REF-${dateOnly(new Date()).replaceAll('-','')}-${Math.random().toString(36).slice(2,8).toUpperCase()}`; } while (db.prepare('SELECT id FROM referrals WHERE referral_token=?').get(token));
+  const refId = uid('ref');
+  const targetFacility = req.body.toFacilityName || 'Referral Hospital';
+  const reason = req.body.reason || 'Specialist evaluation';
+  db.prepare('INSERT INTO referrals (id,patient_id,from_facility_id,to_facility_id,reason,status,created_at,updated_at,referral_token,patient_name,to_facility_name,from_facility_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(refId, row.patient_id, 'fac-1', 'fac-2', reason, 'pending', now(), now(), token, patient?.name || 'Patient', targetFacility, 'Seva Rural Health Centre');
+  referrals.splice(0, referrals.length, ...hydrateReferrals());
+  db.prepare('UPDATE triage_cases SET case_status=?,referral_id=?,updated_at=? WHERE id=?').run('action_taken', refId, now(), row.id);
+
+  // Verify intake
+  if (row.intake_id) db.prepare("UPDATE intakes_db SET status='verified' WHERE id=?").run(row.intake_id);
+  db.prepare("UPDATE intakes_db SET status='verified' WHERE patient_id=? AND status='pending_review'").run(row.patient_id);
+
+  // Send notification to patient
+  await sendPatientNotification(row.patient_id, null, 'referral_created', 'Specialist Referral Issued by Doctor', `You have been referred to ${targetFacility} for: ${reason}. Your referral tracking token is ${token}.`);
+
+  log(row.patient_id, `Referral created via triage case ${row.id} → ${targetFacility}`);
+  res.json({ ok: true, referralId: refId, referralToken: token });
+});
+
+app.post('/api/cases/:id/resolve', async (req, res) => {
+  const row = db.prepare('SELECT id,patient_id,intake_id,care_review_request_id FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const actionType = req.body.actionType || 'resolve';
+  const nextStatus = actionType === 'followup' ? 'action_taken' : 'resolved';
+  db.prepare('UPDATE triage_cases SET case_status=?,follow_up_date=?,notes=?,updated_at=? WHERE id=?').run(nextStatus, req.body.followUpDate || null, req.body.notes || null, now(), row.id);
+  
+  // Verify intake & care review requests
+  if (row.intake_id) db.prepare("UPDATE intakes_db SET status='verified' WHERE id=?").run(row.intake_id);
+  db.prepare("UPDATE intakes_db SET status='verified' WHERE patient_id=? AND status='pending_review'").run(row.patient_id);
+  if (row.care_review_request_id && actionType !== 'followup') {
+    db.prepare("UPDATE care_review_requests SET status='reviewed', reviewed_at=? WHERE id=?").run(now(), row.care_review_request_id);
+  }
+
+  // Send notification to patient
+  await sendPatientNotification(
+    row.patient_id, 
+    null, 
+    'case_resolved', 
+    actionType === 'followup' ? 'Care Follow-Up Scheduled by Doctor' : 'Clinical Case Resolved by Doctor', 
+    actionType === 'followup' 
+      ? `Dr. Ananya Sharma scheduled a clinical follow-up on ${req.body.followUpDate || 'upcoming date'}. Notes: ${req.body.notes || 'Review required'}.` 
+      : `Dr. Ananya Sharma has reviewed and resolved your clinical case. Notes: ${req.body.notes || 'Care plan complete.'}`
+  );
+
+  log(row.patient_id, actionType === 'followup' ? `Follow-up scheduled for ${req.body.followUpDate}` : `Triage case ${row.id} resolved`);
+  res.json({ ok: true });
+});
+
+app.post('/api/cases/:id/consultation', async (req, res) => {
+  const row = db.prepare('SELECT id,patient_id,intake_id,care_review_request_id FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const consultId = uid('con');
+  const clinicalText = req.body.doctorNotes || req.body.notes || '';
+  const notes = [clinicalText, req.body.vitals ? `Vitals: ${req.body.vitals}` : ''].filter(Boolean).join('\n');
+  db.prepare('INSERT INTO consultations_db (id,patient_id,doctor_id,diagnosis,notes,created_at) VALUES (?,?,?,?,?,?)').run(consultId, row.patient_id, 'doc-1', '[]', notes, now());
+  db.prepare('UPDATE triage_cases SET case_status=?,doctor_id=?,updated_at=? WHERE id=?').run('in_review', req.body.doctorId || 'doc-1', now(), row.id);
+
+  // Verify intake & care review requests
+  if (row.intake_id) db.prepare("UPDATE intakes_db SET status='verified' WHERE id=?").run(row.intake_id);
+  db.prepare("UPDATE intakes_db SET status='verified' WHERE patient_id=? AND status='pending_review'").run(row.patient_id);
+  db.prepare("UPDATE care_review_requests SET status='reviewed', reviewed_at=? WHERE patient_id=? AND status='pending'").run(now(), row.patient_id);
+
+  // Send notification to patient
+  await sendPatientNotification(row.patient_id, null, 'teleconsult_notes', 'Consultation Notes Recorded by Doctor', `Dr. Ananya Sharma has recorded notes for your consultation: ${req.body.doctorNotes || 'Consultation complete.'} ${req.body.vitals ? `Recorded vitals: ${req.body.vitals}` : ''}`);
+
+  log(row.patient_id, `Teleconsult notes saved via triage case ${row.id}`);
+  res.json({ ok: true, consultationId: consultId });
+});
+
+app.post('/api/cases/:id/dispatch-worker', async (req, res) => {
+  const row = db.prepare('SELECT id,patient_id FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const workerId = req.body.workerId;
+  const workerName = req.body.workerName;
+  let worker: any = null;
+  if (workerId) {
+    worker = db.prepare('SELECT id, name, phone, facility_id FROM health_workers WHERE id=?').get(workerId);
+  }
+  if (!worker && workerName) {
+    worker = db.prepare('SELECT id, name, phone, facility_id FROM health_workers WHERE name=?').get(workerName);
+  }
+  if (!worker) {
+    worker = db.prepare('SELECT id, name, phone, facility_id FROM health_workers WHERE active=1 LIMIT 1').get();
+  }
+  if (!worker) return res.status(404).json({ message: 'No health worker available for dispatch.' });
+
+  const workerInfo = JSON.stringify({
+    id: worker.id,
+    name: worker.name,
+    role: 'ASHA Worker',
+    phone: worker.phone,
+    status: 'dispatched',
+    distance: req.body.distance || '1.5 km',
+    dispatchedAt: now()
+  });
+  db.prepare('UPDATE triage_cases SET assigned_worker_id=?,frontline_worker_json=?,updated_at=? WHERE id=?').run(worker.id, workerInfo, now(), row.id);
+  
+  // Send notification to patient
+  await sendPatientNotification(row.patient_id, null, 'worker_dispatched', 'Frontline Health Worker Dispatched to Your Location', `Dr. Ananya Sharma has dispatched ASHA Worker ${worker.name} for an urgent on-site visit and vitals monitoring. Contact phone: ${worker.phone}.`);
+
+  log(row.patient_id, `Frontline worker ${worker.name} dispatched for case ${row.id}`);
+  res.json({ ok: true, workerId: worker.id, workerName: worker.name });
+});
+
+app.patch('/api/cases/:id/worker-visit', async (req, res) => {
+  const row = db.prepare('SELECT id,patient_id,frontline_worker_json FROM triage_cases WHERE id=?').get(req.params.id) as any;
+  if (!row) return res.status(404).json({ message: 'Case not found.' });
+  const vitals = req.body.vitals || '';
+  const notes = req.body.notes || '';
+  const currentWorker = safeJson<any>(row.frontline_worker_json, {});
+  const updatedWorker = JSON.stringify({
+    ...currentWorker,
+    status: 'completed',
+    completedAt: now(),
+    vitalsRecorded: vitals,
+    workerNotes: notes
+  });
+  db.prepare("UPDATE triage_cases SET frontline_worker_json=?,updated_at=? WHERE id=?").run(updatedWorker, now(), row.id);
+  if (vitals || notes) {
+    const consultId = uid('con');
+    db.prepare('INSERT INTO consultations_db (id,patient_id,doctor_id,diagnosis,notes,created_at) VALUES (?,?,?,?,?,?)')
+      .run(consultId, row.patient_id, 'worker-1', '[]', `[ASHA Home Visit] Vitals: ${vitals}. Notes: ${notes}`, now());
+  }
+  log(row.patient_id, `Frontline worker completed home visit for case ${row.id}`);
+  res.json({ ok: true });
+});
+
+app.post('/api/cases/simulate', (req, res) => {
+  try {
+    const type = req.body.type === 'urgent' ? 'urgent' : 'critical';
+    // Pick a random patient that doesn't already have an open case
+    const openCasePatients = (db.prepare("SELECT patient_id FROM triage_cases WHERE case_status != 'resolved'").all() as any[]).map(r => r.patient_id);
+    const eligible = patients.filter(p => !openCasePatients.includes(p.id));
+    const patient = eligible.length > 0 ? eligible[Math.floor(Math.random() * eligible.length)] : patients[Math.floor(Math.random() * patients.length)];
+    const scenarioPool = type === 'critical' ? [
+      { symptoms: ['Severe headache','Blurred vision','Swelling in feet','28 weeks pregnant'], complaint: 'Severe headache and visual disturbance at 28 weeks gestation', flags: ['Pregnancy with possible pre-eclampsia symptoms'] },
+      { symptoms: ['Crushing chest pain','Radiating to left arm','Sweating','Shortness of breath'], complaint: 'Acute crushing chest pain radiating to left arm', flags: ['Chest pain with radiation — possible ACS'] },
+      { symptoms: ['Sudden right-sided weakness','Slurred speech','Facial droop'], complaint: 'Acute onset right hemiparesis with facial droop', flags: ['Acute stroke symptoms — golden hour critical'] }
+    ] : [
+      { symptoms: ['High fever for 3 days','Cough with yellow sputum','Night sweats'], complaint: 'Persistent fever with productive cough and night sweats', flags: ['Sputum-producing cough with night sweats — TB screening required'] },
+      { symptoms: ['Severe abdominal pain','Right lower quadrant','Nausea','Low-grade fever'], complaint: 'Acute right lower quadrant abdominal pain', flags: ['RLQ pain with guarding — appendicitis evaluation required'] },
+      { symptoms: ['High fever','Rash','Lethargy','Poor feeding'], complaint: 'Paediatric high fever with rash and lethargy', flags: ['Child with high fever and rash — urgent paediatric review'] }
+    ];
+    const scenario = scenarioPool[Math.floor(Math.random() * scenarioPool.length)];
+    const intakeId = uid('int');
+    const summary = `AI-generated intake: ${scenario.symptoms.join('; ')}. Requires clinician verification.`;
+    db.prepare('INSERT INTO intakes_db (id,patient_id,symptoms,summary,red_flags,status,created_at) VALUES (?,?,?,?,?,?,?)').run(intakeId, patient.id, JSON.stringify(scenario.symptoms), summary, JSON.stringify(scenario.flags), 'pending_review', now());
+    const triageCase = autoCreateTriageCase(patient.id, intakeId, scenario.symptoms, scenario.flags, summary);
+    if (triageCase) {
+      db.prepare('UPDATE triage_cases SET severity_level=? WHERE id=?').run(type, triageCase.id);
+    }
+    log(patient.id, `Simulated ${type} case created`);
+    const hydrated = triageCase ? hydrateTriageCases().find(c => c.id === triageCase.id) : null;
+    res.json(hydrated || { id: intakeId, patientName: patient.name });
+  } catch (e: any) {
+    console.error('Simulate case error:', e);
+    res.status(500).json({ message: 'Unable to simulate case.' });
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({ message: `API route not found: ${req.method} ${req.path}` });
 });
@@ -1552,6 +2314,7 @@ app.use((err: any, _req: any, res: any, _next: any) => {
   if (!res.headersSent) res.status(500).json({ message: 'Internal API error. Check the API terminal for details.' });
 });
 
-app.listen(4000, () => {
-  console.log('Swasthya Setu API: http://localhost:4000');
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Swasthya Setu API: http://localhost:${PORT}`);
 });

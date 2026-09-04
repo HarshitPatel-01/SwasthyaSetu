@@ -150,3 +150,8 @@ After booking: the patient receives an appointment confirmation by SMS and email
 ### Notification persistence
 
 Appointment booking and cancellation notifications are persisted in the SQLite `notifications` table before/while delivery is attempted. Each record stores the patient, appointment, channel (`gmail` or `sms`), recipient, message, delivery status, provider message ID, error (if any), creation time, and sent time. Configure `GMAIL_*` and `TWILIO_*` environment variables to enable live delivery; notification history is still retained when a provider is not configured.
+
+
+## Unified care-team communication
+
+The current MVP uses three primary care roles—**Patient, Health Worker, and Doctor**—with one shared patient-centered Care Team conversation. Each role can send a short message to the other two roles without opening a separate chat system. Messages are persisted in SQLite through `/api/care-team/messages`. This follows the project brief's goal of one connected care journey and keeps communication simple rather than creating separate applications for every stakeholder.
