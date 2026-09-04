@@ -11,9 +11,43 @@
       #swasthya-emergency-sos{position:fixed;right:18px;bottom:18px;z-index:99999;border:0;border-radius:999px;padding:14px 20px;font:700 15px/1 system-ui,sans-serif;color:#fff;background:#b91c1c;box-shadow:0 8px 24px rgba(127,29,29,.35);cursor:pointer}#swasthya-emergency-sos:disabled{opacity:.65;cursor:wait}#swasthya-emergency-message{position:fixed;right:18px;bottom:76px;z-index:99999;max-width:340px;padding:12px 14px;border-radius:12px;background:#fff;color:#111827;box-shadow:0 8px 24px rgba(0,0,0,.16);font:600 13px/1.4 system-ui,sans-serif}@media(max-width:640px){#swasthya-emergency-sos{right:12px;bottom:12px;padding:13px 17px}#swasthya-emergency-message{right:12px;bottom:68px;max-width:calc(100vw - 24px)}}
     </style>
     <script>
-      (()=>{const API='http://localhost:4000/api';let b,m;const patientRoute=()=>/^#\\/?patient(?:\\/|$)/.test(location.hash);const msg=(t)=>{if(!m)return;m.textContent=t;m.hidden=false;clearTimeout(msg.t);msg.t=setTimeout(()=>m.hidden=true,7000)};async function sos(){let s=null;try{s=JSON.parse(localStorage.getItem('swasthya-session')||'null')}catch{}if(!s?.id||s.role!=='patient'){msg('Please sign in as a patient before using Emergency SOS.');return}if(!confirm('Emergency assistance\
-\
-Press OK to notify the SwasthyaSetu care team and open the emergency call to 112.'))return;b.disabled=true;b.textContent='Sending SOS…';try{const br=await fetch(API+'/bootstrap',{headers:{'x-demo-user-id':s.id}});if(!br.ok)throw Error();const d=await br.json();const p=d.patients?.find(x=>x.id===s.patientId)||d.patients?.[0];if(!p)throw Error();let pos=null;if(navigator.geolocation)try{pos=await new Promise(r=>navigator.geolocation.getCurrentPosition(x=>r(x.coords),()=>r(null),{enableHighAccuracy:true,timeout:5000,maximumAge:30000}))}catch{}const docs=(d.medicalDocuments||[]).filter(x=>x.sharedWithCareTeam);const reason=[p.medicalCondition?'Active condition: '+p.medicalCondition:'',p.allergies?'Allergies: '+p.allergies:'',p.medications?'Current medications: '+p.medications:'',pos?'Location: '+pos.latitude.toFixed(6)+', '+pos.longitude.toFixed(6):'Location unavailable'].filter(Boolean).join(' | ');const r=await fetch(API+'/appointments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientId:p.id,doctorId:d.doctors?.[0]?.id||'doc-1',startsAt:new Date().toISOString(),isEmergency:true,emergencyReason:reason,medicalHistory:p.medicalHistory||p.medicalCondition||'Emergency assistance requested.',attachments:docs.map(x=>({id:x.id,name:x.name,type:x.mimeType,size:x.size,dataUrl:x.dataUrl}))})});if(!r.ok)throw Error();msg('Emergency request sent. Opening emergency call to 112…');location.href='tel:112'}catch(e){console.error(e);msg('Could not reach the server. Please call 112 directly now.')}finally{b.disabled=false;b.textContent='🚨 Emergency SOS'}}function sync(){if(b)b.hidden=!patientRoute()}function mount(){b=document.createElement('button');b.id='swasthya-emergency-sos';b.type='button';b.textContent='🚨 Emergency SOS';b.title='Notify care team and call 112';b.onclick=sos;m=document.createElement('div');m.id='swasthya-emergency-message';m.hidden=true;m.setAttribute('role','status');document.body.append(b,m);sync();addEventListener('hashchange',sync)}document.readyState==='loading'?addEventListener('DOMContentLoaded',mount):mount()})();
+      (function(){
+        var API='http://localhost:4000/api';
+        var b=null, m=null;
+        function patientRoute(){ return /^#\/?patient(?:\/|$)/.test(location.hash); }
+        function msg(t){ if(!m)return; m.textContent=t; m.hidden=false; clearTimeout(msg.t); msg.t=setTimeout(function(){m.hidden=true;},10000); }
+        async function sos(){
+          var s=null;
+          try{s=JSON.parse(localStorage.getItem('swasthya-session')||'null');}catch(e){}
+          if(!s || !s.id || s.role!=='patient'){msg('Please sign in as a patient before using Emergency SOS.');return;}
+          if(!confirm('Emergency assistance\n\nPress OK to notify the SwasthyaSetu care team and open the emergency call to 112.'))return;
+          b.disabled=true; b.textContent='Sending SOS…';
+          try{
+            var br=await fetch(API+'/bootstrap',{headers:{'x-demo-user-id':s.id},cache:'no-store'});
+            if(!br.ok)throw new Error('bootstrap failed');
+            var d=await br.json();
+            var p=(d.patients||[]).find(function(x){return x.id===s.patientId;}) || (d.patients||[])[0];
+            if(!p)throw new Error('patient not found');
+            var pos=null;
+            if(navigator.geolocation){try{pos=await new Promise(function(resolve){navigator.geolocation.getCurrentPosition(function(x){resolve(x.coords);},function(){resolve(null);},{enableHighAccuracy:true,timeout:5000,maximumAge:30000});});}catch(e){}}
+            var docs=(d.medicalDocuments||[]).filter(function(x){return x.sharedWithCareTeam;});
+            var reason=[p.medicalCondition?'Active condition: '+p.medicalCondition:'',p.allergies?'Allergies: '+p.allergies:'',p.medications?'Current medications: '+p.medications:'',pos?'Location: '+pos.latitude.toFixed(6)+', '+pos.longitude.toFixed(6):'Location unavailable'].filter(Boolean).join(' | ');
+            var doctor=(d.doctors||[])[0];
+            var r=await fetch(API+'/appointments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientId:p.id,doctorId:doctor?doctor.id:'doc-1',startsAt:new Date().toISOString(),isEmergency:true,emergencyReason:reason,medicalHistory:p.medicalHistory||p.medicalCondition||'Emergency assistance requested.',attachments:docs.map(function(x){return {id:x.id,name:x.name,type:x.mimeType,size:x.size};})})});
+            if(!r.ok)throw new Error('SOS request failed');
+            msg('Emergency request sent. Opening emergency call to 112…');
+            location.href='tel:112';
+          }catch(e){console.error(e);msg('Could not reach the server. Please call 112 directly now.');}
+          finally{b.disabled=false;b.textContent='🚨 Emergency SOS';}
+        }
+        function sync(){if(b)b.hidden=!patientRoute();}
+        function mount(){
+          b=document.createElement('button'); b.id='swasthya-emergency-sos'; b.type='button'; b.textContent='🚨 Emergency SOS'; b.title='Notify care team and call 112'; b.onclick=sos;
+          m=document.createElement('div'); m.id='swasthya-emergency-message'; m.hidden=true; m.setAttribute('role','status');
+          document.body.append(b,m); sync(); addEventListener('hashchange',sync);
+        }
+        if(document.readyState==='loading')addEventListener('DOMContentLoaded',mount);else mount();
+      })();
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
