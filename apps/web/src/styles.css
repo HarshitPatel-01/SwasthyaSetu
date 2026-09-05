@@ -2526,3 +2526,140 @@ button.small { min-height: 34px; padding: 8px 12px; border-radius: 10px; }
 /* Three-way care communication */
 .care-shared-context{display:flex;justify-content:space-between;gap:14px;align-items:center;background:#f8fbfa;border:1px solid #dcebe7;border-radius:12px;padding:11px 12px;margin-bottom:12px}.care-shared-context>div:first-child{display:flex;flex-direction:column;gap:3px}.care-shared-context b{font-size:12px;color:#0f172a}.care-shared-context span{font-size:10px;color:#64748b}.care-shared-pills{display:flex!important;gap:6px;flex-wrap:wrap;justify-content:flex-end}.care-shared-pills span{background:#fff;border:1px solid #dbe7e5;border-radius:999px;padding:5px 8px;font-weight:700;color:#0f766e}.care-call-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #cfe9e2;background:#f0fdf9;border-radius:12px;padding:11px 12px;margin-bottom:12px}.care-call-bar>div{display:flex;flex-direction:column;gap:3px}.care-call-bar b{display:flex;align-items:center;gap:6px;font-size:12px;color:#065f52}.care-call-bar b svg{width:15px}.care-call-bar span{font-size:10px;color:#64748b}.care-call-bar button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.care-call-bar button svg{width:15px}
 @media(max-width:700px){.care-shared-context,.care-call-bar{align-items:flex-start;flex-direction:column}.care-shared-pills{justify-content:flex-start!important}.care-call-bar button{width:100%;justify-content:center}}
+
+/* Dynamic doctor-side care context */
+.doctor-worker-assessment {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #bae6fd;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%);
+}
+.doctor-worker-assessment-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.doctor-worker-assessment-head h3,
+.doctor-live-context-head h3 {
+  margin: 2px 0 5px;
+  color: #163e37;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.doctor-worker-assessment-head p:not(.eyebrow),
+.doctor-live-context-head p:not(.eyebrow) {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.doctor-worker-grid,
+.doctor-live-context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.doctor-worker-grid > div,
+.doctor-live-context-grid > div {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.88);
+  border: 1px solid #e2e8f0;
+}
+.doctor-worker-grid b,
+.doctor-live-context-grid b {
+  display: block;
+  color: #0f172a;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.doctor-worker-grid p,
+.doctor-live-context-grid p {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.doctor-worker-grid small,
+.doctor-live-context-grid small {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.doctor-worker-person {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.doctor-worker-vitals {
+  border-left: 3px solid #0284c7 !important;
+}
+.doctor-worker-notes {
+  border-left: 3px solid #7c3aed !important;
+}
+.doctor-worker-recommendation {
+  border-left: 3px solid #d97706 !important;
+  background: #fffbeb !important;
+}
+.doctor-worker-recommendation b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #92400e;
+}
+.doctor-emergency-context {
+  margin: 12px 0 18px;
+  padding: 11px 13px;
+  border: 1px solid #fecaca;
+  border-radius: 11px;
+  background: #fff7f7;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.doctor-emergency-context > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #b91c1c;
+}
+.doctor-emergency-context small {
+  display: block;
+  margin-top: 2px;
+  color: #7f1d1d;
+  font-size: 10px;
+}
+.doctor-patient-live-context {
+  margin: 18px 0 8px;
+  padding: 15px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+.doctor-live-context-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+@media (max-width: 900px) {
+  .doctor-worker-grid,
+  .doctor-live-context-grid {
+    grid-template-columns: 1fr;
+  }
+  .doctor-worker-assessment-head,
+  .doctor-live-context-head,
+  .doctor-emergency-context {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
