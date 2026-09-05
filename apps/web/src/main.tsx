@@ -442,6 +442,24 @@ function DoctorView({ data, action, setNotice, refresh, language }: any) {
   }, [selectedCaseId]);
 
   const selectedCase = cases.find(c => c.id === selectedCaseId) || cases[0];
+  const selectedPatientRecord = selectedCase ? (data.patients || []).find((p:any) => p.id === selectedCase.patientId) : null;
+  const selectedWorkerAssessment = selectedCase?.frontlineWorker || null;
+  const selectedWorkerReview = selectedCase ? [...(data.careReviewRequests || [])]
+    .filter((r:any) => r.patientId === selectedCase.patientId && r.sentBy === 'health_worker')
+    .sort((a:any,b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] : null;
+  const selectedEmergency = selectedCase ? (data.emergencyAlerts || []).find((a:any) => a.patientId === selectedCase.patientId && a.status === 'active') : null;
+  const selectedPatientConsultations = selectedCase ? (data.consultations || [])
+    .filter((c:any) => c.patientId === selectedCase.patientId)
+    .sort((a:any,b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) : [];
+  const selectedPatientPrescriptions = selectedCase ? (data.prescriptions || [])
+    .filter((r:any) => r.patientId === selectedCase.patientId)
+    .sort((a:any,b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) : [];
+  const selectedPatientDiagnostics = selectedCase ? (data.diagnosticOrders || [])
+    .filter((d:any) => d.patientId === selectedCase.patientId)
+    .sort((a:any,b:any) => new Date(b.orderedAt).getTime() - new Date(a.orderedAt).getTime()) : [];
+  const selectedPatientReferrals = selectedCase ? (data.referrals || [])
+    .filter((r:any) => r.patientId === selectedCase.patientId)
+    .sort((a:any,b:any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) : [];
   const filteredCases = cases.filter(c => { if (severityFilter !== 'all' && c.severity?.level !== severityFilter) return false; if (statusFilter !== 'all' && c.status !== statusFilter) return false; return true; });
   const severityRank: Record<string, number> = { critical: 1, urgent: 2, concerning: 3, routine: 4 };
   const sortedCases = [...filteredCases].sort((a, b) => (severityRank[a.severity?.level] || 4) - (severityRank[b.severity?.level] || 4));
@@ -626,12 +644,67 @@ function DoctorView({ data, action, setNotice, refresh, language }: any) {
                 )}
               </div>
 
+              {(selectedWorkerAssessment && (selectedWorkerAssessment.vitalsRecorded || selectedWorkerAssessment.workerNotes)) || selectedWorkerReview ? (
+                <section className="doctor-worker-assessment">
+                  <div className="doctor-worker-assessment-head">
+                    <div>
+                      <p className="eyebrow">Frontline response</p>
+                      <h3><UserCheck style={{ width: 18 }} /> Health Worker Assessment &amp; Recommendation</h3>
+                      <p>Information recorded by the assigned frontline health worker during field assessment. This is shared with the doctor for clinical review.</p>
+                    </div>
+                    <span className={cn('worker-status-tag', selectedWorkerAssessment?.status || 'completed')}>{selectedWorkerAssessment?.status || selectedWorkerReview?.status || 'review requested'}</span>
+                  </div>
+                  <div className="doctor-worker-grid">
+                    <div className="doctor-worker-person">
+                      <b>{selectedWorkerAssessment?.name || 'Frontline Health Worker'}</b>
+                      <small>{selectedWorkerAssessment?.role || 'Health Worker'}{selectedWorkerAssessment?.phone ? ` · ${selectedWorkerAssessment.phone}` : ''}</small>
+                      {selectedWorkerAssessment?.completedAt && <small>Visit completed {new Date(selectedWorkerAssessment.completedAt).toLocaleString('en-IN')}</small>}
+                    </div>
+                    <div className="doctor-worker-vitals">
+                      <b>Vitals recorded</b>
+                      <p>{selectedWorkerAssessment?.vitalsRecorded || 'No vitals recorded yet.'}</p>
+                    </div>
+                    <div className="doctor-worker-notes">
+                      <b>Worker observation</b>
+                      <p>{selectedWorkerAssessment?.workerNotes || 'No field observation recorded yet.'}</p>
+                    </div>
+                    {selectedWorkerReview && (
+                      <div className="doctor-worker-recommendation">
+                        <b><Stethoscope style={{ width: 14 }} /> Health Worker Recommendation</b>
+                        <p>{selectedWorkerReview.reason}</p>
+                        <small>Status: {selectedWorkerReview.status} · {new Date(selectedWorkerReview.createdAt).toLocaleString('en-IN')}</small>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              ) : null}
+
+              {selectedEmergency && (
+                <div className="doctor-emergency-context">
+                  <div><ShieldAlert style={{ width: 18 }} /><div><b>Active Emergency Alert</b><small>{selectedEmergency.createdAt ? new Date(selectedEmergency.createdAt).toLocaleString('en-IN') : 'Active now'} · Patient location is being coordinated by the emergency workflow.</small></div></div>
+                  <span className="severity-badge critical">CRITICAL</span>
+                </div>
+              )}
+
               <div className="intake-summary-section">
-                <div className="summary-box-card"><h4>Chief Complaint &amp; Onset</h4><p><b>{selectedCase.summary?.chiefComplaint}</b></p><small style={{ color: '#64748b', display: 'block', marginTop: 4 }}>Duration: {selectedCase.summary?.duration}</small></div>
-                <div className="summary-box-card"><h4>Associated Symptoms</h4><ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#1f2937' }}>{(selectedCase.summary?.symptoms || []).map((s: string, i: number) => <li key={i}>{s}</li>)}</ul></div>
-                <div className="summary-box-card"><h4>Relevant History &amp; Meds</h4><p style={{ fontSize: 12 }}><b>Conditions:</b> {selectedCase.summary?.history?.conditions?.join(', ') || 'None reported'}<br /><b>Meds:</b> {selectedCase.summary?.history?.medications?.join(', ') || 'None'}<br /><b>Allergies:</b> {selectedCase.summary?.history?.allergies?.join(', ') || 'NKDA'}</p></div>
+                <div className="summary-box-card"><h4>Chief Complaint &amp; Onset</h4><p><b>{selectedCase.summary?.chiefComplaint || 'Not recorded'}</b></p><small style={{ color: '#64748b', display: 'block', marginTop: 4 }}>Duration: {selectedCase.summary?.duration || 'Not specified'}</small></div>
+                <div className="summary-box-card"><h4>Associated Symptoms</h4><ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#1f2937' }}>{(selectedCase.summary?.symptoms || []).length ? (selectedCase.summary?.symptoms || []).map((s: string, i: number) => <li key={i}>{s}</li>) : <li>No symptoms recorded.</li>}</ul></div>
+                <div className="summary-box-card"><h4>Relevant History &amp; Meds</h4><p style={{ fontSize: 12 }}><b>Conditions:</b> {selectedPatientRecord?.medicalCondition || selectedCase.summary?.history?.conditions?.join(', ') || 'None recorded'}<br /><b>History:</b> {selectedPatientRecord?.medicalHistory || 'No additional history recorded'}<br /><b>Meds:</b> {selectedPatientRecord?.medications || selectedCase.summary?.history?.medications?.join(', ') || 'None recorded'}<br /><b>Allergies:</b> {selectedPatientRecord?.allergies || selectedCase.summary?.history?.allergies?.join(', ') || 'None recorded'}</p></div>
                 <div className="summary-box-card"><h4>Red Flags Detected</h4><div className="red-flags-list">{(selectedCase.summary?.redFlags || []).map((rf: string, i: number) => <div key={i} className="red-flag-item"><AlertTriangle style={{ width: 14 }} /> {rf}</div>)}{(!selectedCase.summary?.redFlags?.length) && <span style={{ fontSize: 12, color: '#16a34a' }}>No immediate red flags</span>}</div></div>
               </div>
+
+              <section className="doctor-patient-live-context">
+                <div className="doctor-live-context-head">
+                  <div><p className="eyebrow">Live patient context</p><h3>Latest care activity</h3><p>Recent consultations, prescriptions, diagnostics and referrals for this patient.</p></div>
+                  <span className="record-shared-badge"><CheckCircle2 /> Connected record</span>
+                </div>
+                <div className="doctor-live-context-grid">
+                  <div><b>Latest consultation</b><p>{selectedPatientConsultations[0]?.notes || 'No consultation recorded yet.'}</p>{selectedPatientConsultations[0]?.createdAt && <small>{new Date(selectedPatientConsultations[0].createdAt).toLocaleString('en-IN')}</small>}</div>
+                  <div><b>Latest prescription</b><p>{selectedPatientPrescriptions[0]?.medicines?.length ? selectedPatientPrescriptions[0].medicines.map((m:any)=>m.name).join(', ') : 'No prescription recorded yet.'}</p>{selectedPatientPrescriptions[0]?.doctorNotes && <small>{selectedPatientPrescriptions[0].doctorNotes}</small>}</div>
+                  <div><b>Latest diagnostic order</b><p>{selectedPatientDiagnostics[0]?.testName || 'No diagnostic order recorded yet.'}</p>{selectedPatientDiagnostics[0]?.facilityName && <small>{selectedPatientDiagnostics[0].facilityName} · {selectedPatientDiagnostics[0].status}</small>}</div>
+                  <div><b>Latest referral</b><p>{selectedPatientReferrals[0]?.reason || 'No referral recorded yet.'}</p>{selectedPatientReferrals[0]?.toFacilityName && <small>To {selectedPatientReferrals[0].toFacilityName} · {selectedPatientReferrals[0].status}</small>}</div>
+                </div>
+              </section>
 
               <div className="collapsible-section">
                 <button className="collapsible-header" onClick={() => setTranscriptOpen(!transcriptOpen)}>

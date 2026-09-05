@@ -807,11 +807,27 @@ const appointments: Appointment[] = [
     doctorId: 'doc-1',
     startsAt: '2026-08-24T10:30:00+05:30',
     token: 1,
-    status: 'booked'
+    status: 'completed'
   }
 ];
 
-// Persist the original demo appointment once; subsequent appointments are database-backed.
+// Clean up stale demo/upcoming appointment state so past appointments never block new bookings.
+// A patient may only have one genuinely upcoming booked appointment; historical appointments
+// remain available in the record but must not prevent a new booking.
+const staleBooked = db.prepare(`SELECT id, slot_id FROM appointments_db WHERE status='booked' AND starts_at < ?`).all(now()) as any[];
+if (staleBooked.length) {
+  const cleanup = db.transaction(() => {
+    for (const a of staleBooked) {
+      db.prepare(`UPDATE appointments_db SET status='completed' WHERE id=? AND status='booked'`).run(a.id);
+      if (a.slot_id) {
+        db.prepare(`UPDATE appointment_slots SET booked_count=MAX(0, booked_count-1), status=CASE WHEN MAX(0, booked_count-1) >= capacity THEN 'full' ELSE 'available' END WHERE id=?`).run(a.slot_id);
+      }
+    }
+  });
+  cleanup();
+}
+
+// Persist the original demo appointment once as a historical visit; subsequent appointments are database-backed.
 if ((db.prepare('SELECT COUNT(*) AS c FROM appointments_db').get() as any).c === 0) {
   for (const a of appointments as any[]) {
     const date = a.startsAt.slice(0, 10), time = a.startsAt.slice(11, 16);
@@ -1586,7 +1602,7 @@ app.post('/api/appointments', async (req, res) => {
   let token = 0;
   try {
     db.exec('BEGIN IMMEDIATE');
-    const existing = db.prepare(`SELECT id FROM appointments_db WHERE patient_id=? AND status='booked'`).get(patientId) as any;
+    const existing = db.prepare(`SELECT id FROM appointments_db WHERE patient_id=? AND status='booked' AND starts_at >= ?`).get(patientId, now()) as any;
     if (existing) throw new Error('PATIENT_HAS_APPOINTMENT');
     const locked = db.prepare(`SELECT status, capacity, booked_count FROM appointment_slots WHERE id=?`).get(slot.id) as any;
     const capacity = Number(locked?.capacity || 3);
