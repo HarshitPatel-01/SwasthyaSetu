@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnpm-store
+
+# Build outputs
+dist/
+**/dist/
+build/
+*.tsbuildinfo
+
+# SQLite Database & Runtime data
+data/
+**/data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Environment & Logs
+.env
+.env.local
+apps/api/.env
+*.log
+dev-server.log
+dev-server.err
+.git-backup/
+
+# OS files
+.DS_Store
+Thumbs.db
